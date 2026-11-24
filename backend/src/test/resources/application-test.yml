@@ -1,0 +1,10 @@
+# Used by @ActiveProfiles("test"). Needs a separate, existing database (Flyway creates the tables):
+#   createdb -U postgres syncboard_test
+spring:
+  datasource:
+    url: ${TEST_DB_URL:jdbc:postgresql://localhost:5432/syncboard_test}
+
+app:
+  jwt:
+    secret: test-secret-test-secret-test-secret-0123456789
+    ttl: PT15M
