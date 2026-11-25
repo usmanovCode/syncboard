@@ -14,16 +14,18 @@ export const socketState = {
   boardId: null as number | null,
   sent: [] as Sent[],
   closed: false,
+  rejoins: 0,
   reset() {
     this.handlers = null
     this.boardId = null
     this.sent = []
     this.closed = false
+    this.rejoins = 0
   },
   /** Simulates a successful (re)connect: the join reply, then status "connected". */
   join(payload: Partial<JoinPayload> = {}) {
     const h = this.require()
-    h.onJoined({ boardId: this.boardId ?? 0, userId: 1, online: [], ...payload })
+    h.onJoined({ boardId: this.boardId ?? 0, userId: 1, online: [], shapes: [], seq: 0, ...payload })
     h.onStatus('connected')
   },
   require(): BoardSocketHandlers {
@@ -39,6 +41,9 @@ export function openBoardSocket(boardId: number, handlers: BoardSocketHandlers):
   handlers.onStatus('connecting')
   return {
     send: (path, body) => socketState.sent.push({ path, body }),
+    rejoin: () => {
+      socketState.rejoins += 1
+    },
     close: () => {
       socketState.closed = true
     },

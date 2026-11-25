@@ -12,6 +12,7 @@ export const ko: Translations<typeof en> = {
     save: '저장',
     saving: '저장 중…',
     tryAgain: '다시 시도',
+    dismiss: '닫기',
     logout: '로그아웃',
     language: '언어',
   },
@@ -135,11 +136,7 @@ export const ko: Translations<typeof en> = {
     status: {
       saved: '모든 변경 사항이 저장됨',
       saving: '저장 중…',
-      unsaved: '저장되지 않은 변경 사항',
-      error: '저장하지 못했습니다. 다시 시도하는 중…',
-      conflict: '다른 곳에서 보드가 변경되었습니다. 최근 편집 내용은 저장되지 않았습니다.',
+      offline: '오프라인: 연결되면 변경 사항이 동기화됩니다',
     },
-    retryNow: '지금 다시 시도',
-    reload: '최신 버전 불러오기',
   },
 }

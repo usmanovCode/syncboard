@@ -8,6 +8,7 @@ export const en = {
     save: 'Save',
     saving: 'Saving…',
     tryAgain: 'Try again',
+    dismiss: 'Dismiss',
     logout: 'Log out',
     language: 'Language',
   },
@@ -131,11 +132,7 @@ export const en = {
     status: {
       saved: 'All changes saved',
       saving: 'Saving…',
-      unsaved: 'Unsaved changes',
-      error: "Couldn't save. Retrying…",
-      conflict: 'This board was changed somewhere else. Your latest edits are not saved.',
+      offline: 'Offline: changes will sync when the connection is back',
     },
-    retryNow: 'Retry now',
-    reload: 'Load latest version',
   },
 } as const

@@ -1,16 +1,16 @@
-import { useCallback, useEffect, useReducer, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link, useNavigate, useParams } from 'react-router'
 import { boardsApi, canEdit, type Board } from '../api/boards'
 import { ApiError } from '../api/client'
 import { useAuth } from '../auth/authContext'
 import { CanvasStage } from '../canvas/CanvasStage'
-import { historyReducer, initHistory } from '../canvas/history'
+import { emptyHistory, record, takeRedo, takeUndo, type LocalHistory } from '../canvas/localHistory'
+import { inverseOf, type BoardOp } from '../canvas/ops'
 import { parseCanvasContent, restyleShape } from '../canvas/shapes'
 import { Toolbar } from '../canvas/Toolbar'
 import { TOOLS } from '../canvas/tools'
 import { DEFAULT_STYLE, type Shape, type ShapeStyle, type Tool } from '../canvas/types'
-import { useCanvasSaver, type SaveStatus } from '../canvas/useCanvasSaver'
 import { LanguageSwitcher } from '../components/LanguageSwitcher'
 import { PresenceBar } from '../components/PresenceBar'
 import { ShareDialog } from '../components/ShareDialog'
@@ -24,7 +24,10 @@ type LoadState =
   | { status: 'error'; message: string }
   | ({ status: 'loaded' } & Loaded)
 
-/** Loads the board, then hands it to the editor. Reloading remounts the editor with fresh state. */
+/**
+ * Loads the board (REST, for the first paint), then hands it to the editor, whose real-time room
+ * replaces the drawing with the live one as soon as it joins.
+ */
 export function BoardPage() {
   const { id } = useParams()
   const boardId = Number(id)
@@ -67,15 +70,7 @@ export function BoardPage() {
   }, [])
 
   if (state.status === 'loaded') {
-    return (
-      <BoardEditor
-        key={loadCount}
-        board={state.board}
-        shapes={state.shapes}
-        version={state.version}
-        onReload={reload}
-      />
-    )
+    return <BoardEditor key={loadCount} board={state.board} shapes={state.shapes} version={state.version} />
   }
 
   return (
@@ -114,29 +109,74 @@ function isTypingTarget(target: EventTarget | null) {
   return target instanceof HTMLElement && (target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName))
 }
 
-function BoardEditor({ board, shapes: initialShapes, version, onReload }: Loaded & { onReload: () => void }) {
+function BoardEditor({ board, shapes: initialShapes, version }: Loaded) {
   const { t } = useTranslation()
   const { user } = useAuth()
   const navigate = useNavigate()
   // Viewers see the drawing but get no tools; the server rejects their writes anyway.
   const readOnly = !canEdit(board.role)
   const [sharing, setSharing] = useState(false)
-  const room = useBoardRoom(board.id)
-  const [history, dispatch] = useReducer(historyReducer, initialShapes, initHistory)
+  const room = useBoardRoom(board.id, initialShapes, version)
+  const { shapes, sendOp } = room
+  const [history, setHistory] = useState<LocalHistory>(emptyHistory)
   const [tool, setToolState] = useState<Tool>('pen')
   const [style, setStyle] = useState<ShapeStyle>(DEFAULT_STYLE)
   const [selectedId, setSelectedId] = useState<string | null>(null)
-  const { status, retry } = useCanvasSaver(board.id, history.present, version)
 
   const setTool = useCallback((next: Tool) => {
     setToolState(next)
     if (next !== 'select') setSelectedId(null)
   }, [])
 
+  /** A change of mine: shown now, sent to the room, and undoable. */
+  const perform = useCallback(
+    (op: BoardOp) => {
+      const inverse = inverseOf(op, shapes)
+      if (!inverse) return // changes nothing (e.g. someone else just deleted the shape)
+      sendOp(op)
+      setHistory((h) => record(h, inverse))
+    },
+    [shapes, sendOp],
+  )
+
+  const update = useCallback(
+    (id: string, change: (shape: Shape) => Shape) => {
+      const shape = shapes.find((s) => s.id === id)
+      const next = shape && change(shape)
+      if (next && next !== shape) perform({ type: 'update', shape: next })
+    },
+    [shapes, perform],
+  )
+
+  const remove = useCallback(
+    (id: string) => {
+      perform({ type: 'remove', id })
+      setSelectedId((current) => (current === id ? null : current))
+    },
+    [perform],
+  )
+
+  const undo = useCallback(() => {
+    const step = takeUndo(history, shapes)
+    if (!step) return
+    sendOp(step.op)
+    setHistory(step.history)
+  }, [history, shapes, sendOp])
+
+  const redo = useCallback(() => {
+    const step = takeRedo(history, shapes)
+    if (!step) return
+    sendOp(step.op)
+    setHistory(step.history)
+  }, [history, shapes, sendOp])
+
+  // Someone else may delete the selected shape.
+  const selected = selectedId && shapes.some((s) => s.id === selectedId) ? selectedId : null
+
   // A style change also applies to the selected shape, so it can be recolored after drawing.
   function changeStyle(change: Partial<ShapeStyle>) {
     setStyle((current) => ({ ...current, ...change }))
-    if (selectedId) dispatch({ type: 'update', id: selectedId, update: (shape) => restyleShape(shape, change) })
+    if (selected) update(selected, (shape) => restyleShape(shape, change))
   }
 
   useEffect(() => {
@@ -147,17 +187,17 @@ function BoardEditor({ board, shapes: initialShapes, version, onReload }: Loaded
       if (event.ctrlKey || event.metaKey) {
         if (key === 'z') {
           event.preventDefault()
-          dispatch({ type: event.shiftKey ? 'redo' : 'undo' })
+          if (event.shiftKey) redo()
+          else undo()
         } else if (key === 'y') {
           event.preventDefault()
-          dispatch({ type: 'redo' })
+          redo()
         }
         return
       }
-      if ((event.key === 'Delete' || event.key === 'Backspace') && selectedId) {
+      if ((event.key === 'Delete' || event.key === 'Backspace') && selected) {
         event.preventDefault()
-        dispatch({ type: 'remove', id: selectedId })
-        setSelectedId(null)
+        remove(selected)
         return
       }
       if (event.altKey) return
@@ -166,7 +206,18 @@ function BoardEditor({ board, shapes: initialShapes, version, onReload }: Loaded
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [readOnly, selectedId, setTool])
+  }, [readOnly, selected, setTool, undo, redo, remove])
+
+  // Warn before closing the tab while changes haven't reached the server.
+  const unsynced = room.pendingCount > 0
+  useEffect(() => {
+    if (!unsynced) return
+    const warn = (event: BeforeUnloadEvent) => event.preventDefault()
+    window.addEventListener('beforeunload', warn)
+    return () => window.removeEventListener('beforeunload', warn)
+  }, [unsynced])
+
+  const syncStatus: SyncStatus = !unsynced ? 'saved' : room.status === 'connected' ? 'saving' : 'offline'
 
   return (
     <div className="flex h-screen flex-col bg-slate-50">
@@ -183,7 +234,7 @@ function BoardEditor({ board, shapes: initialShapes, version, onReload }: Loaded
             {t('board.viewOnly')}
           </span>
         ) : (
-          <SaveIndicator status={status} onRetry={retry} onReload={onReload} />
+          <SyncIndicator status={syncStatus} />
         )}
         <button
           onClick={() => setSharing(true)}
@@ -193,6 +244,14 @@ function BoardEditor({ board, shapes: initialShapes, version, onReload }: Loaded
         </button>
         <LanguageSwitcher />
       </header>
+      {room.error && (
+        <div role="alert" className="flex items-center gap-3 border-b border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">
+          <span className="flex-1">{room.error}</span>
+          <button onClick={room.clearError} className="font-medium underline">
+            {t('common.dismiss')}
+          </button>
+        </div>
+      )}
       {sharing && user && (
         <ShareDialog
           board={board}
@@ -204,58 +263,46 @@ function BoardEditor({ board, shapes: initialShapes, version, onReload }: Loaded
       <div className="flex min-h-0 flex-1">
         {!readOnly && (
           <Toolbar
-          tool={tool}
-          style={style}
-          canUndo={history.past.length > 0}
-          canRedo={history.future.length > 0}
-          onTool={setTool}
-          onStyle={changeStyle}
-          onUndo={() => dispatch({ type: 'undo' })}
-          onRedo={() => dispatch({ type: 'redo' })}
+            tool={tool}
+            style={style}
+            canUndo={history.undo.length > 0}
+            canRedo={history.redo.length > 0}
+            onTool={setTool}
+            onStyle={changeStyle}
+            onUndo={undo}
+            onRedo={redo}
           />
         )}
         <CanvasStage
-          shapes={history.present}
+          shapes={shapes}
           readOnly={readOnly}
           tool={tool}
           style={style}
-          selectedId={selectedId}
+          selectedId={selected}
           onSelect={setSelectedId}
-          onAdd={(shape) => dispatch({ type: 'add', shape })}
-          onUpdate={(id, update) => dispatch({ type: 'update', id, update })}
-          onRemove={(id) => {
-            dispatch({ type: 'remove', id })
-            if (id === selectedId) setSelectedId(null)
-          }}
+          onAdd={(shape) => perform({ type: 'add', shape })}
+          onUpdate={update}
+          onRemove={remove}
         />
       </div>
     </div>
   )
 }
 
-const STATUS_CLASS: Record<SaveStatus, string> = {
+/** saved: the server has everything; saving: changes on their way; offline: queued until reconnect. */
+type SyncStatus = 'saved' | 'saving' | 'offline'
+
+const STATUS_CLASS: Record<SyncStatus, string> = {
   saved: 'text-slate-500',
   saving: 'text-slate-500',
-  unsaved: 'text-amber-600',
-  error: 'text-red-600',
-  conflict: 'text-red-600',
+  offline: 'text-amber-600',
 }
 
-function SaveIndicator({ status, onRetry, onReload }: { status: SaveStatus; onRetry: () => void; onReload: () => void }) {
+function SyncIndicator({ status }: { status: SyncStatus }) {
   const { t } = useTranslation()
   return (
-    <div role="status" className={`flex items-center gap-2 text-sm ${STATUS_CLASS[status]}`}>
-      <span>{t(`board.status.${status}`)}</span>
-      {status === 'error' && (
-        <button onClick={onRetry} className="font-medium underline">
-          {t('board.retryNow')}
-        </button>
-      )}
-      {status === 'conflict' && (
-        <button onClick={onReload} className="font-medium underline">
-          {t('board.reload')}
-        </button>
-      )}
+    <div role="status" className={`text-sm ${STATUS_CLASS[status]}`}>
+      {t(`board.status.${status}`)}
     </div>
   )
 }

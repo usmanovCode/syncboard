@@ -9,18 +9,18 @@ import org.springframework.data.repository.query.Param;
 public interface BoardCanvasRepository extends JpaRepository<BoardCanvas, Long> {
 
     /**
-     * Compare-and-set save: writes only if the stored version is still {@code version}, and bumps it.
-     * Returns the number of updated rows: 0 means someone else saved first (or the canvas is gone).
+     * Writes the live room state (the realtime room is the only writer). {@code version} is the room's
+     * op sequence number. Returns 0 if the canvas no longer exists (board deleted).
      */
     @Modifying(flushAutomatically = true, clearAutomatically = true)
     @Query(value = """
             update board_canvases
-               set content = cast(:content as jsonb), version = version + 1, updated_at = :now
-             where board_id = :boardId and version = :version
+               set content = cast(:content as jsonb), version = :version, updated_at = :now
+             where board_id = :boardId
             """, nativeQuery = true)
-    int saveIfVersionMatches(
+    int overwrite(
             @Param("boardId") long boardId,
-            @Param("version") int version,
             @Param("content") String content,
+            @Param("version") long version,
             @Param("now") Instant now);
 }

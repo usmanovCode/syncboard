@@ -5,7 +5,6 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -29,8 +28,6 @@ import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilde
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
 class BoardSharingIntegrationTest {
-
-    private static final String EMPTY_CANVAS = "{\"content\":{\"schemaVersion\":1,\"shapes\":[]},\"version\":%d}";
 
     @Autowired
     private MockMvc mvc;
@@ -102,10 +99,9 @@ class BoardSharingIntegrationTest {
     }
 
     @Test
-    void editorsDrawButCannotManage() throws Exception {
+    void editorsCannotManage() throws Exception {
+        // Drawing permissions are enforced on the realtime channel (BoardSyncIntegrationTest).
         share("vali@example.com", "EDITOR");
-
-        authed(put(canvas()), editor, EMPTY_CANVAS.formatted(0)).andExpect(status().isOk());
 
         authed(patch("/api/boards/" + boardId), editor, "{\"name\":\"Boshqa\"}")
                 .andExpect(status().isForbidden())
@@ -116,22 +112,13 @@ class BoardSharingIntegrationTest {
     }
 
     @Test
-    void viewersCannotDraw() throws Exception {
-        share("gani@example.com", "VIEWER");
-
-        authed(put(canvas()), viewer, EMPTY_CANVAS.formatted(0))
-                .andExpect(status().isForbidden())
-                .andExpect(jsonPath("$.code").value("READ_ONLY_BOARD"));
-    }
-
-    @Test
     void ownerChangesRolesAndRemovesMembers() throws Exception {
         share("vali@example.com", "EDITOR");
 
         authed(patch(members() + "/" + editor.getId()), owner, "{\"role\":\"VIEWER\"}")
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.role").value("VIEWER"));
-        authed(put(canvas()), editor, EMPTY_CANVAS.formatted(0)).andExpect(status().isForbidden());
+        authed(get("/api/boards/" + boardId), editor).andExpect(jsonPath("$.board.role").value("VIEWER"));
 
         authed(delete(members() + "/" + editor.getId()), owner).andExpect(status().isNoContent());
         authed(get("/api/boards/" + boardId), editor)
@@ -192,10 +179,6 @@ class BoardSharingIntegrationTest {
 
     private String members() {
         return "/api/boards/" + boardId + "/members";
-    }
-
-    private String canvas() {
-        return "/api/boards/" + boardId + "/canvas";
     }
 
     private ResultActions share(String email, String role) throws Exception {

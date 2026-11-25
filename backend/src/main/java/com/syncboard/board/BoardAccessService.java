@@ -57,7 +57,7 @@ public class BoardAccessService {
         return access;
     }
 
-    static ApiException boardNotFound() {
+    public static ApiException boardNotFound() {
         return new ApiException(HttpStatus.NOT_FOUND, "BOARD_NOT_FOUND", "error.boardNotFound");
     }
 }

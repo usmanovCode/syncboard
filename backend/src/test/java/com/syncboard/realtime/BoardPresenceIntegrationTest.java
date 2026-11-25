@@ -7,6 +7,8 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.syncboard.auth.JwtService;
 import com.syncboard.board.Board;
+import com.syncboard.board.BoardCanvas;
+import com.syncboard.board.BoardCanvasRepository;
 import com.syncboard.board.BoardMember;
 import com.syncboard.board.BoardMemberRepository;
 import com.syncboard.board.BoardRepository;
@@ -47,6 +49,9 @@ class BoardPresenceIntegrationTest {
     private BoardMemberRepository members;
 
     @Autowired
+    private BoardCanvasRepository canvases;
+
+    @Autowired
     private JwtService jwtService;
 
     private final List<StompTestClient> clients = new ArrayList<>();
@@ -63,6 +68,7 @@ class BoardPresenceIntegrationTest {
         viewer = users.saveAndFlush(new User("vali@example.com", "unused-hash", "Vali"));
         stranger = users.saveAndFlush(new User("sobir@example.com", "unused-hash", "Sobir"));
         boardId = boards.saveAndFlush(new Board(owner.getId(), "Doska")).getId();
+        canvases.saveAndFlush(new BoardCanvas(boardId));
         members.saveAndFlush(new BoardMember(boardId, viewer.getId(), BoardRole.VIEWER));
     }
 

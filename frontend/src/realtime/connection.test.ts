@@ -52,6 +52,7 @@ function handlers(): BoardSocketHandlers {
     onStatus: vi.fn(),
     onJoined: vi.fn(),
     onPresence: vi.fn(),
+    onOp: vi.fn(),
     onError: vi.fn(),
     onUnauthorized: vi.fn(),
   }
@@ -93,18 +94,36 @@ describe('openBoardSocket', () => {
     connect()
     expect([...stomp.instance!.subscriptions.keys()]).toEqual([
       '/topic/boards/7/presence',
+      '/topic/boards/7/ops',
       '/user/queue/errors',
       '/app/boards/7/join',
     ])
 
     const online = [{ userId: 1, name: 'Ali', color: '#e11d48', role: 'OWNER' }]
-    deliver('/app/boards/7/join', { boardId: 7, userId: 1, online })
-    expect(h.onJoined).toHaveBeenCalledWith({ boardId: 7, userId: 1, online })
+    const joined = { boardId: 7, userId: 1, online, shapes: [], seq: 4 }
+    deliver('/app/boards/7/join', joined)
+    expect(h.onJoined).toHaveBeenCalledWith(joined)
     expect(h.onStatus).toHaveBeenLastCalledWith('connected')
     expect(stomp.instance!.unsubscribed).toEqual(['/app/boards/7/join'])
 
     deliver('/topic/boards/7/presence', [])
     expect(h.onPresence).toHaveBeenCalledWith([])
+
+    const op = { seq: 5, userId: 2, clientOpId: 'x', op: { type: 'remove', id: 's1' } }
+    deliver('/topic/boards/7/ops', op)
+    expect(h.onOp).toHaveBeenCalledWith(op)
+  })
+
+  it('re-joins on request to get a fresh snapshot', () => {
+    const h = handlers()
+    const socket = openBoardSocket(7, h)
+    connect()
+    deliver('/app/boards/7/join', { boardId: 7, userId: 1, online: [], shapes: [], seq: 1 })
+
+    socket.rejoin()
+    deliver('/app/boards/7/join', { boardId: 7, userId: 1, online: [], shapes: [], seq: 9 })
+
+    expect(h.onJoined).toHaveBeenLastCalledWith(expect.objectContaining({ seq: 9 }))
   })
 
   it('reports lost connections but not its own close', () => {

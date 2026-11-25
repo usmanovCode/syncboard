@@ -6,6 +6,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.messaging.simp.config.ChannelRegistration;
 import org.springframework.messaging.simp.config.MessageBrokerRegistry;
+import org.springframework.scheduling.annotation.EnableScheduling;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler;
 import org.springframework.web.socket.config.annotation.EnableWebSocketMessageBroker;
 import org.springframework.web.socket.config.annotation.StompEndpointRegistry;
@@ -17,6 +18,7 @@ import org.springframework.web.socket.config.annotation.WebSocketTransportRegist
  * single backend instance only; running several instances needs a shared broker (planned: Redis Pub/Sub).
  */
 @Configuration
+@EnableScheduling // BoardRooms flushes rooms to the database periodically
 @EnableWebSocketMessageBroker
 public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
 
@@ -35,12 +37,17 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
     @Override
     public void registerStompEndpoints(StompEndpointRegistry registry) {
         registry.addEndpoint("/ws").setAllowedOrigins(allowedOrigins.toArray(String[]::new));
+        // Not setPreserveReceiveOrder: it runs StompAuthInterceptor asynchronously, so rejections no
+        // longer reach the client as ERROR frames. Instead each client keeps at most one op in flight
+        // (frontend useBoardRoom), so a client's ops cannot be reordered on the way in.
     }
 
     @Override
     public void configureMessageBroker(MessageBrokerRegistry registry) {
         registry.setApplicationDestinationPrefixes("/app");
         registry.setUserDestinationPrefix("/user");
+        // Deliver to each client in publish order, i.e. in op seq order.
+        registry.setPreservePublishOrder(true);
         // Heartbeats let the server notice dead connections (and drop their presence) within ~20 s.
         registry.enableSimpleBroker("/topic", "/queue")
                 .setHeartbeatValue(new long[] {10_000, 10_000})
@@ -60,8 +67,9 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
     @Bean
     ThreadPoolTaskScheduler heartbeatScheduler() {
         ThreadPoolTaskScheduler scheduler = new ThreadPoolTaskScheduler();
-        scheduler.setPoolSize(1);
-        scheduler.setThreadNamePrefix("ws-heartbeat-");
+        // Also runs @Scheduled jobs (room flushes), so heartbeats are not delayed by database writes.
+        scheduler.setPoolSize(2);
+        scheduler.setThreadNamePrefix("ws-scheduler-");
         scheduler.initialize();
         return scheduler;
     }

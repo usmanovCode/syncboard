@@ -1,21 +1,13 @@
 package com.syncboard.board;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.syncboard.board.BoardAccessService.Access;
 import com.syncboard.board.BoardDtos.BoardDetailResponse;
 import com.syncboard.board.BoardDtos.BoardRequest;
 import com.syncboard.board.BoardDtos.BoardResponse;
 import com.syncboard.board.BoardDtos.CanvasResponse;
-import com.syncboard.board.BoardDtos.CanvasSaveRequest;
-import com.syncboard.board.BoardDtos.CanvasSaveResponse;
 import com.syncboard.common.ApiException;
 import com.syncboard.user.User;
 import com.syncboard.user.UserRepository;
-import java.nio.charset.StandardCharsets;
-import java.time.Instant;
-import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -26,24 +18,20 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class BoardService {
 
-    /** Upper bound for one canvas document, as serialized JSON. */
-    static final int MAX_CANVAS_BYTES = 2 * 1024 * 1024;
-
     private final BoardRepository boards;
     private final BoardCanvasRepository canvases;
     private final BoardMemberRepository members;
     private final BoardAccessService access;
     private final UserRepository users;
-    private final ObjectMapper json;
 
+    /** The drawing itself is changed only through the realtime rooms (com.syncboard.realtime). */
     public BoardService(BoardRepository boards, BoardCanvasRepository canvases, BoardMemberRepository members,
-            BoardAccessService access, UserRepository users, ObjectMapper json) {
+            BoardAccessService access, UserRepository users) {
         this.boards = boards;
         this.canvases = canvases;
         this.members = members;
         this.access = access;
         this.users = users;
-        this.json = json;
     }
 
     /** Owned and shared boards, each with the caller's role and the owner's name. */
@@ -91,42 +79,8 @@ public class BoardService {
         boards.delete(access.requireOwner(userId, boardId).board());
     }
 
-    /**
-     * Replaces the whole drawing. The request names the version it was based on; if another save
-     * happened since, nothing is written and the client gets 409 CANVAS_CONFLICT.
-     */
-    @Transactional
-    public CanvasSaveResponse saveCanvas(long userId, long boardId, CanvasSaveRequest request) {
-        access.requireEdit(userId, boardId);
-        String content = serializeValidCanvas(request.content());
-        // Postgres keeps microseconds; truncate so the returned timestamp equals the stored one.
-        Instant now = Instant.now().truncatedTo(ChronoUnit.MICROS);
-        if (canvases.saveIfVersionMatches(boardId, request.version(), content, now) == 0) {
-            throw new ApiException(HttpStatus.CONFLICT, "CANVAS_CONFLICT", "error.canvasConflict");
-        }
-        boards.touch(boardId, now);
-        return new CanvasSaveResponse(request.version() + 1, now);
-    }
-
     private BoardResponse response(Access a) {
         String ownerName = users.findById(a.board().getOwnerId()).map(User::getFullName).orElse(null);
         return BoardResponse.from(a.board(), a.role(), ownerName);
-    }
-
-    /** The backend doesn't interpret shapes, but the document must have the frontend's top-level shape. */
-    private String serializeValidCanvas(JsonNode content) {
-        if (!content.isObject() || !content.path("schemaVersion").isInt() || !content.path("shapes").isArray()) {
-            throw new ApiException(HttpStatus.BAD_REQUEST, "INVALID_CANVAS", "error.invalidCanvas");
-        }
-        String serialized;
-        try {
-            serialized = json.writeValueAsString(content);
-        } catch (JsonProcessingException e) {
-            throw new ApiException(HttpStatus.BAD_REQUEST, "INVALID_CANVAS", "error.invalidCanvas");
-        }
-        if (serialized.getBytes(StandardCharsets.UTF_8).length > MAX_CANVAS_BYTES) {
-            throw new ApiException(HttpStatus.PAYLOAD_TOO_LARGE, "CANVAS_TOO_LARGE", "error.canvasTooLarge");
-        }
-        return serialized;
     }
 }

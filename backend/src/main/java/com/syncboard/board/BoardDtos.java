@@ -1,12 +1,10 @@
 package com.syncboard.board;
 
 import com.fasterxml.jackson.annotation.JsonRawValue;
-import com.fasterxml.jackson.databind.JsonNode;
 import com.syncboard.user.User;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
-import jakarta.validation.constraints.PositiveOrZero;
 import jakarta.validation.constraints.Size;
 import java.time.Instant;
 
@@ -40,21 +38,15 @@ public final class BoardDtos {
     public record BoardDetailResponse(BoardResponse board, CanvasResponse canvas) {
     }
 
-    /** {@code content} is the stored JSON document, passed through without parsing. */
+    /**
+     * {@code content} is the stored JSON document, passed through without parsing. It can lag the live
+     * room by a couple of seconds; the realtime join reply is authoritative.
+     */
     public record CanvasResponse(@JsonRawValue String content, int version, Instant updatedAt) {
 
         static CanvasResponse from(BoardCanvas canvas) {
             return new CanvasResponse(canvas.getContent(), canvas.getVersion(), canvas.getUpdatedAt());
         }
-    }
-
-    /** {@code version} is the version the client's content is based on (from the last GET or save). */
-    public record CanvasSaveRequest(
-            @NotNull(message = "{validation.canvas.required}") JsonNode content,
-            @NotNull(message = "{validation.canvas.required}") @PositiveOrZero Integer version) {
-    }
-
-    public record CanvasSaveResponse(int version, Instant updatedAt) {
     }
 
     /** POST /api/boards/{id}/members. {@code role} must be EDITOR or VIEWER. */

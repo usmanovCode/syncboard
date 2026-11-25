@@ -53,22 +53,29 @@ npm run build                               # tsc -b && vite build
 **Real-time (spans both apps, `com.syncboard.realtime`, `src/realtime/`).** STOMP over plain WebSocket at `/ws`; in dev, Vite proxies `/ws` like `/api`.
 - **Authentication:** the HTTP chain permits the handshake. `StompAuthInterceptor` authenticates `CONNECT` (`Authorization: Bearer …` STOMP header, plus `accept-language` for error texts) and sets a `BoardPrincipal` (name = user id).
 - **Authorization:** `SUBSCRIBE` is only allowed to a board's `/topic/boards/{id}/(ops|presence|cursors)` and `/app/boards/{id}/join` (needs `requireView`), and to `/user/queue/errors`. `SEND` is only allowed to `/app/**`; clients must never publish to broker topics. Violations get a STOMP ERROR frame.
-- **Joining a room:** the client opens one connection per board page (`openBoardSocket`, auto-reconnect). It subscribes, then subscribes to `/app/boards/{id}/join`. That is a `@SubscribeMapping`: a one-off reply with the room state, resent on every reconnect.
+- **Joining a room:** the client opens one connection per board page (`openBoardSocket`, auto-reconnect). It subscribes to the topics, then to `/app/boards/{id}/join`. That is a `@SubscribeMapping`: a one-off reply with the online list and the drawing snapshot + `seq`, resent on every reconnect.
 - **Presence:** `PresenceRegistry` tracks presence per STOMP session; it is deduplicated per user, and colors are stable per user (`colorOf`). It is dropped on `SessionDisconnectEvent`; heartbeats are 10 s.
 - **Errors:** errors in message handlers go to the sender's `/user/queue/errors` as `{ code, message }`.
-- **Single instance only:** the broker and room state are in memory. Running more than one backend instance needs a shared bus; the plan is **Redis Pub/Sub** for topic fan-out, with room state and presence moved to Redis as well. Until then, do not scale horizontally.
+- **Single instance only:** the broker, presence and board rooms are in memory. Running more than one backend instance needs a shared bus; the plan is **Redis Pub/Sub** for topic fan-out, with room state and presence moved to Redis as well. Until then, do not scale horizontally.
 - **Known limit:** access is checked when subscribing. A member removed while connected keeps receiving until they reconnect, but writes are re-checked on every message.
 - **Tests:** backend tests use a real client (`StompTestClient`, `RANDOM_PORT`). Frontend tests replace the connection with `vi.mock('../realtime/connection', () => import('../test/socketMock'))` and drive the server side through `socketState`.
 
-**Canvas (spans both apps, no real-time yet).** The drawing lives in `board_canvases`, one row per board, created together with the board. `content` is JSONB `{ schemaVersion, shapes }`.
-- **Ownership of the format:** the frontend owns it (`src/canvas/types.ts`). The backend only checks the top-level shape and a 2 MB cap.
-- **Saving:** `PUT /api/boards/{id}/canvas { content, version }` replaces the whole document. It is a compare-and-set (`BoardCanvasRepository.saveIfVersionMatches`), and a stale `version` gets `409 CANVAS_CONFLICT`. Writing requires `requireEdit`.
+**Canvas and op sync (spans both apps).** The drawing is stored in `board_canvases`: one row per board, created with the board, `content` = JSONB `{ schemaVersion, shapes }`, `version` = last op seq.
+- **Shape format:** owned by `src/canvas/types.ts` and mirrored by `realtime/ShapeValidator.java`; keep the two in sync. The server validates every shape and keeps only known fields. Every shape has `x`/`y`, so moving changes only the position; pen and line `points` are relative to it. The eraser removes whole shapes (Konva hit testing).
+- **Ops (server-side, no CRDT):** `add` / `update` / `remove` each carry the complete new shape. That makes them idempotent and lets everyone converge by applying them in server `seq` order. An existing id in `add` is replaced in place; an `update` of a missing shape is a no-op (delete wins). The rules are implemented twice and must match: `canvas/ops.ts` `applyOp` and `realtime/BoardRoom.java`. Ops that change nothing still get a `seq`.
+- **Server rooms:** `BoardRooms` holds the live room in memory and loads it from the DB on first use. It writes back every `app.realtime.flush-interval` (default 2 s), when the last user disconnects, and on shutdown; a crash can lose the last couple of seconds.
+- **Sending ops:** `SEND /app/boards/{id}/ops { clientOpId, op }`. The sender must have joined, and `requireEdit` is checked on every op. Accepted ops are broadcast to `/topic/boards/{id}/ops` as `{ seq, userId, clientOpId, op }`, under the room lock, with `setPreservePublishOrder`. Rejections go to the sender's error queue with the `clientOpId`.
+- **Ordering:** each client keeps **one op in flight** (`useBoardRoom`); the next is sent after the echo or rejection. Do not enable `setPreserveReceiveOrder`: it runs `StompAuthInterceptor` asynchronously, so rejections no longer reach clients as ERROR frames.
+- **Client sync:** `canvas/sync.ts` is pure. The view is `confirmed` (server state as of `seq`) with our `pending` ops applied on top; the echo confirms an op.
+  - Ops that arrive before the join snapshot are buffered.
+  - A `seq` gap triggers a re-join.
+  - After every (re)join, pending ops are re-sent; this is safe because ops are idempotent.
+  - The REST `GET /api/boards/{id}` content is only for the first paint. **There is no REST write for the drawing.**
+- **Undo:** per user (`canvas/localHistory.ts`). It records the inverse op of each of my changes, never reverts others' work, and skips steps that no longer apply.
 - **Frontend layout:**
-  - `src/canvas/` holds pure logic: `shapes.ts` (drag-to-shape, `parseCanvasContent`, which drops invalid shapes) and `history.ts` (undo/redo reducer over immutable snapshots). It also holds `useCanvasSaver`: 1.5 s debounce, one save in flight, retry every 5 s on errors, stop on 409, flush on unmount.
   - `CanvasStage.tsx` is the only place that touches react-konva.
   - `BoardPage` is lazy-loaded so Konva stays out of the main bundle.
-- **Shape model:** every shape has `x`/`y`, so moving is just a position change. Pen and line `points` are relative to it. The eraser removes whole shapes, using Konva hit testing.
-- **Tests:** jsdom has no canvas. Page tests use `vi.mock('react-konva', () => import('../test/konvaMock'))` and steer the pointer through `konvaState`.
+  - Page tests use `vi.mock('react-konva', () => import('../test/konvaMock'))` and the socket mock; they play the server by echoing `socketState.sent`.
 
 **i18n (spans both apps).** Supported languages are `en` (default) and `ko`.
 - Frontend: `i18next` + `react-i18next`, initialized in `src/i18n/index.ts`, which `main.tsx` and the test setup import. `src/i18n/en.ts` defines the keys. `ko.ts` must have the same shape, and `i18next.d.ts` type-checks every `t('...')` key, so `tsc` fails on missing or unknown keys. The language is the stored choice (`localStorage` `syncboard.lang`), else `ko` for Korean browsers, else `en`. `LanguageSwitcher` sits in the app header and on the auth pages. Format dates with `i18n/format.ts` (`Nov 25, 2026` / `2026년 11월 25일`), not ad-hoc `Intl` calls.

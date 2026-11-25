@@ -1,16 +1,17 @@
 import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import App from '../App'
-import { AuthProvider } from '../auth/AuthProvider'
 import type { Board, BoardRole, Member } from '../api/boards'
+import { AuthProvider } from '../auth/AuthProvider'
+import type { BoardOp } from '../canvas/ops'
+import type { PendingOp } from '../canvas/sync'
 import type { Shape } from '../canvas/types'
-import { SAVE_DEBOUNCE_MS } from '../canvas/useCanvasSaver'
 import { setLanguage } from '../i18n'
+import type { OnlineUser } from '../realtime/types'
 import { konvaState } from '../test/konvaMock'
 import { socketState } from '../test/socketMock'
-import type { OnlineUser } from '../realtime/types'
 
 vi.mock('react-konva', () => import('../test/konvaMock'))
 vi.mock('../realtime/connection', () => import('../test/socketMock'))
@@ -27,6 +28,7 @@ const BOARD: Board = {
 }
 const OWNER_MEMBER: Member = { userId: 1, email: ME.email, fullName: ME.fullName, role: 'OWNER' }
 const EXISTING: Shape = { id: 'r1', type: 'rect', x: 10, y: 10, width: 40, height: 30, stroke: '#1e293b', strokeWidth: 4 }
+const SEQ = 3
 
 function jsonResponse(status: number, body?: unknown) {
   return new Response(body === undefined ? null : JSON.stringify(body), {
@@ -35,18 +37,13 @@ function jsonResponse(status: number, body?: unknown) {
   })
 }
 
-type SavedBody = { content: { schemaVersion: number; shapes: Shape[] }; version: number }
-
-/** Fake backend for one board; records canvas saves. */
+/** Fake REST backend for one board (the drawing itself goes over the mocked socket). */
 function fakeBackend({
   shapes = [EXISTING],
   getStatus = 200,
-  saveStatus = 200,
   role = 'OWNER' as BoardRole,
   members = [OWNER_MEMBER],
 } = {}) {
-  const saves: SavedBody[] = []
-  let version = 3
   let people = [...members]
   const board = { ...BOARD, role }
   const fetchMock = vi.fn(async (url: string, init: RequestInit = {}) => {
@@ -77,19 +74,13 @@ function fakeBackend({
       if (getStatus !== 200) return jsonResponse(getStatus, { code: 'BOARD_NOT_FOUND', detail: 'Board not found' })
       return jsonResponse(200, {
         board,
-        canvas: { content: { schemaVersion: 1, shapes }, version, updatedAt: BOARD.updatedAt },
+        canvas: { content: { schemaVersion: 1, shapes }, version: SEQ, updatedAt: BOARD.updatedAt },
       })
-    }
-    if (url === '/api/boards/7/canvas' && method === 'PUT') {
-      saves.push(JSON.parse(init.body as string))
-      if (saveStatus !== 200) return jsonResponse(saveStatus, { code: 'CANVAS_CONFLICT', detail: 'conflict' })
-      version += 1
-      return jsonResponse(200, { version, updatedAt: '2026-11-25T10:00:00Z' })
     }
     throw new Error(`Unexpected request ${method} ${url}`)
   })
   vi.stubGlobal('fetch', fetchMock)
-  return { fetchMock, saves }
+  return { fetchMock }
 }
 
 function renderAt(path: string) {
@@ -102,16 +93,44 @@ function renderAt(path: string) {
   )
 }
 
-async function openBoard() {
+/** A fake server side of the room: sequence numbers and echoes. */
+const server = {
+  seq: SEQ,
+  echoed: 0,
+  reset() {
+    this.seq = SEQ
+    this.echoed = 0
+  },
+  /** Ops our client has sent so far. */
+  sent(): PendingOp[] {
+    return socketState.sent.filter((s) => s.path === 'ops').map((s) => s.body as PendingOp)
+  },
+  /** Accepts everything sent so far (and whatever the client sends in response), in order. */
+  acceptAll() {
+    while (this.echoed < this.sent().length) {
+      const { clientOpId, op } = this.sent()[this.echoed++]
+      act(() => socketState.require().onOp({ seq: ++this.seq, userId: ME.id, clientOpId, op }))
+    }
+  },
+  /** An op by someone else. */
+  remote(op: BoardOp) {
+    act(() => socketState.require().onOp({ seq: ++this.seq, userId: 2, clientOpId: `other-${this.seq}`, op }))
+  },
+}
+
+async function openBoard({ join = true, shapes = [EXISTING] } = {}) {
   renderAt('/boards/7')
   await screen.findByRole('heading', { name: BOARD.name })
   // The board loads outside act(); flush effects so the keyboard listener is attached.
   await act(async () => {})
+  if (join) act(() => socketState.join({ shapes, seq: SEQ }))
 }
 
 const tool = (name: RegExp) => screen.getByRole('button', { name })
 const stage = () => screen.getByTestId('stage')
 const shapes = () => screen.queryAllByTestId('shape')
+const syncStatus = () => screen.getByRole('status')
+const sentOps = () => server.sent().map((p) => p.op)
 
 /** Drags on the stage from one point to another. */
 function dragOnStage(from: [number, number], to: [number, number]) {
@@ -122,21 +141,15 @@ function dragOnStage(from: [number, number], to: [number, number]) {
   fireEvent.pointerUp(stage())
 }
 
-/** Lets the autosave debounce elapse (fake timers) and the save request settle. */
-const waitForAutosave = () => act(() => vi.advanceTimersByTimeAsync(SAVE_DEBOUNCE_MS + 50))
-
 describe('BoardPage', () => {
   beforeEach(() => {
     localStorage.setItem('syncboard.accessToken', 'jwt-token')
     konvaState.reset()
     socketState.reset()
-    vi.useFakeTimers({ shouldAdvanceTime: true })
-  })
-  afterEach(() => {
-    vi.useRealTimers()
+    server.reset()
   })
 
-  it('opens from the dashboard and shows the saved drawing', async () => {
+  it('opens from the dashboard and shows the drawing', async () => {
     fakeBackend()
     renderAt('/')
 
@@ -146,25 +159,37 @@ describe('BoardPage', () => {
     expect(shapes()).toHaveLength(1)
     expect(shapes()[0]).toHaveAttribute('data-kind', 'Rect')
     expect(tool(/^Pen/)).toHaveAttribute('aria-pressed', 'true')
-    expect(screen.getByRole('status')).toHaveTextContent('All changes saved')
+    expect(syncStatus()).toHaveTextContent('All changes saved')
     expect(tool(/^Undo/)).toBeDisabled()
   })
 
-  it('draws a rectangle and autosaves it', async () => {
-    const { saves } = fakeBackend()
+  it('shows the live drawing from the room once joined', async () => {
+    fakeBackend()
+    await openBoard({ join: false })
+    expect(shapes()).toHaveLength(1) // REST content, for the first paint
+
+    const live: Shape = { ...EXISTING, id: 'r2', x: 300 }
+    act(() => socketState.join({ shapes: [EXISTING, live], seq: 10 }))
+
+    expect(shapes()).toHaveLength(2)
+  })
+
+  it('sends a drawn rectangle as an op and shows it until confirmed', async () => {
+    fakeBackend()
     await openBoard()
 
     await userEvent.click(tool(/^Rectangle/))
     dragOnStage([100, 100], [160, 130])
 
     expect(shapes()).toHaveLength(2)
-    expect(screen.getByRole('status')).toHaveTextContent('Unsaved changes')
+    expect(sentOps()).toEqual([
+      { type: 'add', shape: expect.objectContaining({ type: 'rect', x: 100, y: 100, width: 60, height: 30 }) },
+    ])
+    expect(syncStatus()).toHaveTextContent('Saving…')
 
-    await waitForAutosave()
-    expect(saves).toHaveLength(1)
-    expect(saves[0].version).toBe(3)
-    expect(saves[0].content.shapes[1]).toMatchObject({ type: 'rect', x: 100, y: 100, width: 60, height: 30 })
-    expect(screen.getByRole('status')).toHaveTextContent('All changes saved')
+    server.acceptAll()
+    expect(syncStatus()).toHaveTextContent('All changes saved')
+    expect(shapes()).toHaveLength(2)
   })
 
   it('ignores clicks that do not draw anything', async () => {
@@ -175,30 +200,69 @@ describe('BoardPage', () => {
     dragOnStage([50, 50], [50, 50])
 
     expect(shapes()).toHaveLength(1)
+    expect(sentOps()).toEqual([])
   })
 
-  it('undoes and redoes with the buttons and the keyboard', async () => {
-    const { saves } = fakeBackend()
+  it('keeps one op in flight and sends the next after the echo', async () => {
+    fakeBackend()
+    await openBoard()
+
+    dragOnStage([0, 0], [20, 20])
+    dragOnStage([30, 30], [40, 40])
+
+    expect(shapes()).toHaveLength(3) // both visible right away
+    expect(sentOps()).toHaveLength(1) // but only one sent
+    server.acceptAll()
+    expect(sentOps()).toHaveLength(2)
+    expect(syncStatus()).toHaveTextContent('All changes saved')
+  })
+
+  it('shows changes made by others', async () => {
+    fakeBackend()
+    await openBoard()
+
+    server.remote({ type: 'add', shape: { ...EXISTING, id: 'theirs', x: 200 } })
+    expect(shapes()).toHaveLength(2)
+    server.remote({ type: 'remove', id: 'r1' })
+    expect(shapes().map((s) => s.getAttribute('data-id'))).toEqual(['theirs'])
+  })
+
+  it('undoes and redoes my changes with the buttons and the keyboard', async () => {
+    fakeBackend()
     await openBoard()
     dragOnStage([0, 0], [20, 20]) // pen
+    server.acceptAll()
+    const penId = (sentOps()[0] as { shape: Shape }).shape.id
 
-    expect(shapes()).toHaveLength(2)
     await userEvent.click(tool(/^Undo/))
     expect(shapes()).toHaveLength(1)
+    server.acceptAll()
     await userEvent.click(tool(/^Redo/))
     expect(shapes()).toHaveLength(2)
+    server.acceptAll()
 
     fireEvent.keyDown(window, { key: 'z', ctrlKey: true })
     expect(shapes()).toHaveLength(1)
+    server.acceptAll()
     fireEvent.keyDown(window, { key: 'Z', ctrlKey: true, shiftKey: true })
     expect(shapes()).toHaveLength(2)
-    fireEvent.keyDown(window, { key: 'z', ctrlKey: true })
-    expect(shapes()).toHaveLength(1)
+    server.acceptAll()
 
-    // Back at the loaded state: nothing to save.
-    await waitForAutosave()
-    expect(saves).toHaveLength(0)
-    expect(screen.getByRole('status')).toHaveTextContent('All changes saved')
+    expect(sentOps().map((op) => op.type)).toEqual(['add', 'remove', 'add', 'remove', 'add'])
+    expect(sentOps()[1]).toEqual({ type: 'remove', id: penId })
+  })
+
+  it("doesn't undo other people's work", async () => {
+    fakeBackend()
+    await openBoard()
+    dragOnStage([0, 0], [20, 20])
+    server.acceptAll()
+    server.remote({ type: 'add', shape: { ...EXISTING, id: 'theirs' } })
+
+    await userEvent.click(tool(/^Undo/))
+    server.acceptAll()
+
+    expect(shapes().map((s) => s.getAttribute('data-id'))).toEqual(['r1', 'theirs'])
   })
 
   it('switches tools with keyboard shortcuts', async () => {
@@ -214,7 +278,7 @@ describe('BoardPage', () => {
   })
 
   it('erases the whole shape under the pointer', async () => {
-    const { saves } = fakeBackend()
+    fakeBackend()
     await openBoard()
 
     await userEvent.click(tool(/^Eraser/))
@@ -223,64 +287,80 @@ describe('BoardPage', () => {
     fireEvent.pointerUp(stage())
 
     expect(shapes()).toHaveLength(0)
-    await waitForAutosave()
-    expect(saves[0].content.shapes).toEqual([])
+    expect(sentOps()).toEqual([{ type: 'remove', id: 'r1' }])
   })
 
   it('selects, moves, recolors and deletes a shape', async () => {
-    const { saves } = fakeBackend()
+    fakeBackend()
     await openBoard()
     await userEvent.click(tool(/^Select/))
 
     fireEvent.pointerDown(shapes()[0])
     const onDragEnd = konvaState.props.get('r1')?.onDragEnd as (e: unknown) => void
     act(() => onDragEnd({ target: { x: () => 200, y: () => 150 } }))
+    server.acceptAll()
     await userEvent.click(screen.getByRole('button', { name: 'Red' }))
+    server.acceptAll()
 
     expect(shapes()[0]).toHaveAttribute('data-stroke', '#ef4444')
-    await waitForAutosave()
-    expect(saves.at(-1)?.content.shapes[0]).toMatchObject({ id: 'r1', x: 200, y: 150, stroke: '#ef4444' })
+    expect(sentOps()).toEqual([
+      { type: 'update', shape: expect.objectContaining({ id: 'r1', x: 200, y: 150, stroke: '#1e293b' }) },
+      { type: 'update', shape: expect.objectContaining({ id: 'r1', x: 200, y: 150, stroke: '#ef4444' }) },
+    ])
 
     fireEvent.keyDown(window, { key: 'Delete' })
     expect(shapes()).toHaveLength(0)
   })
 
-  it('applies the chosen color and thickness to new shapes', async () => {
-    const { saves } = fakeBackend({ shapes: [] })
+  it('drops the selection when someone else deletes the shape', async () => {
+    fakeBackend()
     await openBoard()
+    await userEvent.click(tool(/^Select/))
+    fireEvent.pointerDown(shapes()[0])
+
+    server.remote({ type: 'remove', id: 'r1' })
+    await userEvent.click(screen.getByRole('button', { name: 'Red' }))
+
+    expect(sentOps()).toEqual([]) // nothing selected any more, so nothing to recolor
+  })
+
+  it('applies the chosen color and thickness to new shapes', async () => {
+    fakeBackend({ shapes: [] })
+    await openBoard({ shapes: [] })
 
     await userEvent.click(screen.getByRole('button', { name: 'Blue' }))
     await userEvent.click(screen.getByRole('button', { name: 'Thick' }))
     expect(screen.getByRole('button', { name: 'Blue' })).toHaveAttribute('aria-pressed', 'true')
     dragOnStage([0, 0], [10, 10])
 
-    await waitForAutosave()
-    expect(saves[0].content.shapes[0]).toMatchObject({ type: 'pen', stroke: '#3b82f6', strokeWidth: 8 })
+    expect(sentOps()[0]).toEqual({
+      type: 'add',
+      shape: expect.objectContaining({ type: 'pen', stroke: '#3b82f6', strokeWidth: 8 }),
+    })
   })
 
   it('adds text with the text tool', async () => {
-    const { saves } = fakeBackend({ shapes: [] })
-    await openBoard()
+    fakeBackend({ shapes: [] })
+    await openBoard({ shapes: [] })
 
     await userEvent.click(tool(/^Text/))
     konvaState.pointer = { x: 30, y: 40 }
     fireEvent.pointerDown(stage())
-    const input = screen.getByRole('textbox', { name: 'Text' })
     // Typing a shortcut letter in the text box must not switch tools.
-    await userEvent.type(input, 'Salom Rr{Enter}')
+    await userEvent.type(screen.getByRole('textbox', { name: 'Text' }), 'Salom Rr{Enter}')
 
     expect(screen.queryByRole('textbox')).toBeNull()
     expect(shapes()).toHaveLength(1)
     expect(shapes()[0]).toHaveTextContent('Salom Rr')
     expect(tool(/^Text/)).toHaveAttribute('aria-pressed', 'true')
-
-    await waitForAutosave()
-    expect(saves[0].content.shapes).toEqual([expect.objectContaining({ type: 'text', x: 30, y: 40, text: 'Salom Rr' })])
+    expect(sentOps()).toEqual([
+      { type: 'add', shape: expect.objectContaining({ type: 'text', x: 30, y: 40, text: 'Salom Rr' }) },
+    ])
   })
 
   it('cancels text with Escape', async () => {
     fakeBackend({ shapes: [] })
-    await openBoard()
+    await openBoard({ shapes: [] })
 
     await userEvent.click(tool(/^Text/))
     fireEvent.pointerDown(stage())
@@ -288,23 +368,59 @@ describe('BoardPage', () => {
 
     expect(screen.queryByRole('textbox')).toBeNull()
     expect(shapes()).toHaveLength(0)
+    expect(sentOps()).toEqual([])
   })
 
-  it('reports a conflict and reloads the latest version', async () => {
-    const { fetchMock } = fakeBackend({ saveStatus: 409 })
+  it('queues changes while offline and sends them after reconnecting', async () => {
+    fakeBackend()
     await openBoard()
+    act(() => socketState.require().onStatus('reconnecting'))
 
     dragOnStage([0, 0], [20, 20])
-    await waitForAutosave()
+    expect(shapes()).toHaveLength(2)
+    expect(sentOps()).toEqual([])
+    expect(syncStatus()).toHaveTextContent('Offline')
 
-    const status = screen.getByRole('status')
-    expect(status).toHaveTextContent('This board was changed somewhere else')
-    await userEvent.click(within(status).getByRole('button', { name: 'Load latest version' }))
+    act(() => socketState.join({ shapes: [EXISTING], seq: SEQ }))
+    expect(sentOps()).toHaveLength(1)
+    server.acceptAll()
+    expect(syncStatus()).toHaveTextContent('All changes saved')
+    expect(shapes()).toHaveLength(2)
+  })
 
-    expect(await screen.findByText('All changes saved')).toBeInTheDocument()
+  it('reverts a change the server rejects and says why', async () => {
+    fakeBackend()
+    await openBoard()
+    dragOnStage([0, 0], [20, 20])
+    const [{ clientOpId }] = server.sent()
+
+    act(() =>
+      socketState.require().onError({ code: 'INVALID_OP', message: 'This change could not be applied', clientOpId }),
+    )
+
     expect(shapes()).toHaveLength(1)
-    const gets = fetchMock.mock.calls.filter(([url, init]) => url === '/api/boards/7' && init?.method === 'GET')
-    expect(gets).toHaveLength(2)
+    expect(screen.getByRole('alert')).toHaveTextContent('This change could not be applied')
+    await userEvent.click(screen.getByRole('button', { name: 'Dismiss' }))
+    expect(screen.queryByRole('alert')).toBeNull()
+  })
+
+  it('ignores errors about ops that are not ours', async () => {
+    fakeBackend()
+    await openBoard()
+
+    act(() => socketState.require().onError({ code: 'INVALID_OP', message: 'x', clientOpId: 'other-tab' }))
+
+    expect(screen.queryByRole('alert')).toBeNull()
+  })
+
+  it('re-joins when an op was missed', async () => {
+    fakeBackend()
+    await openBoard()
+
+    act(() => socketState.require().onOp({ seq: SEQ + 5, userId: 2, clientOpId: 'x', op: { type: 'remove', id: 'r1' } }))
+
+    expect(socketState.rejoins).toBe(1)
+    expect(shapes()).toHaveLength(1) // not applied out of order
   })
 
   it('shows a not-found page for unknown or foreign boards', async () => {
@@ -330,11 +446,11 @@ describe('BoardPage', () => {
 
     expect(screen.getByRole('button', { name: '펜 (P)' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '지우개 (E)' })).toBeInTheDocument()
-    expect(screen.getByRole('status')).toHaveTextContent('모든 변경 사항이 저장됨')
+    expect(syncStatus()).toHaveTextContent('모든 변경 사항이 저장됨')
   })
 
   it('gives viewers a read-only canvas', async () => {
-    const { saves } = fakeBackend({ role: 'VIEWER' })
+    fakeBackend({ role: 'VIEWER' })
     await openBoard()
 
     expect(screen.getByText('View only')).toBeInTheDocument()
@@ -348,68 +464,69 @@ describe('BoardPage', () => {
     fireEvent.keyDown(window, { key: 'Delete' })
 
     expect(shapes()).toHaveLength(1)
-    await waitForAutosave()
-    expect(saves).toHaveLength(0)
+    expect(sentOps()).toEqual([])
   })
 
-  it('lets the owner invite, change roles and remove people', async () => {
-    fakeBackend()
-    await openBoard()
+  describe('sharing', () => {
+    it('lets the owner invite, change roles and remove people', async () => {
+      fakeBackend()
+      await openBoard()
 
-    await userEvent.click(screen.getByRole('button', { name: 'Share' }))
-    const dialog = screen.getByRole('dialog', { name: `Share “${BOARD.name}”` })
-    expect(await within(dialog).findByRole('listitem', { name: ME.fullName })).toHaveTextContent('(you)')
+      await userEvent.click(screen.getByRole('button', { name: 'Share' }))
+      const dialog = screen.getByRole('dialog', { name: `Share “${BOARD.name}”` })
+      expect(await within(dialog).findByRole('listitem', { name: ME.fullName })).toHaveTextContent('(you)')
 
-    // Unknown account: the server's message is shown.
-    await userEvent.type(within(dialog).getByLabelText('Email'), 'nobody@example.com')
-    await userEvent.click(within(dialog).getByRole('button', { name: 'Invite' }))
-    expect(await within(dialog).findByRole('alert')).toHaveTextContent('No SyncBoard account uses this email')
+      // Unknown account: the server's message is shown.
+      await userEvent.type(within(dialog).getByLabelText('Email'), 'nobody@example.com')
+      await userEvent.click(within(dialog).getByRole('button', { name: 'Invite' }))
+      expect(await within(dialog).findByRole('alert')).toHaveTextContent('No SyncBoard account uses this email')
 
-    await userEvent.clear(within(dialog).getByLabelText('Email'))
-    await userEvent.type(within(dialog).getByLabelText('Email'), 'vali@example.com')
-    await userEvent.selectOptions(within(dialog).getByLabelText('Role'), 'VIEWER')
-    await userEvent.click(within(dialog).getByRole('button', { name: 'Invite' }))
+      await userEvent.clear(within(dialog).getByLabelText('Email'))
+      await userEvent.type(within(dialog).getByLabelText('Email'), 'vali@example.com')
+      await userEvent.selectOptions(within(dialog).getByLabelText('Role'), 'VIEWER')
+      await userEvent.click(within(dialog).getByRole('button', { name: 'Invite' }))
 
-    const vali = await within(dialog).findByRole('listitem', { name: 'Vali' })
-    const roleSelect = within(vali).getByLabelText('Role for Vali')
-    expect(roleSelect).toHaveValue('VIEWER')
-    await userEvent.selectOptions(roleSelect, 'EDITOR')
-    await vi.waitFor(() => expect(within(vali).getByLabelText('Role for Vali')).toHaveValue('EDITOR'))
+      const vali = await within(dialog).findByRole('listitem', { name: 'Vali' })
+      const roleSelect = within(vali).getByLabelText('Role for Vali')
+      expect(roleSelect).toHaveValue('VIEWER')
+      await userEvent.selectOptions(roleSelect, 'EDITOR')
+      await vi.waitFor(() => expect(within(vali).getByLabelText('Role for Vali')).toHaveValue('EDITOR'))
 
-    await userEvent.click(within(vali).getByRole('button', { name: 'Remove Vali' }))
-    await vi.waitFor(() => expect(within(dialog).queryByRole('listitem', { name: 'Vali' })).toBeNull())
+      await userEvent.click(within(vali).getByRole('button', { name: 'Remove Vali' }))
+      await vi.waitFor(() => expect(within(dialog).queryByRole('listitem', { name: 'Vali' })).toBeNull())
 
-    fireEvent.keyDown(window, { key: 'Escape' })
-    expect(screen.queryByRole('dialog')).toBeNull()
-  })
+      fireEvent.keyDown(window, { key: 'Escape' })
+      expect(screen.queryByRole('dialog')).toBeNull()
+    })
 
-  it('validates the invite email before calling the API', async () => {
-    const { fetchMock } = fakeBackend()
-    await openBoard()
+    it('validates the invite email before calling the API', async () => {
+      const { fetchMock } = fakeBackend()
+      await openBoard()
 
-    await userEvent.click(screen.getByRole('button', { name: 'Share' }))
-    await userEvent.type(screen.getByLabelText('Email'), 'not-an-email')
-    await userEvent.click(screen.getByRole('button', { name: 'Invite' }))
+      await userEvent.click(screen.getByRole('button', { name: 'Share' }))
+      await userEvent.type(screen.getByLabelText('Email'), 'not-an-email')
+      await userEvent.click(screen.getByRole('button', { name: 'Invite' }))
 
-    expect(screen.getByText('Invalid email format')).toBeInTheDocument()
-    expect(fetchMock).not.toHaveBeenCalledWith('/api/boards/7/members', expect.objectContaining({ method: 'POST' }))
-  })
+      expect(screen.getByText('Invalid email format')).toBeInTheDocument()
+      expect(fetchMock).not.toHaveBeenCalledWith('/api/boards/7/members', expect.objectContaining({ method: 'POST' }))
+    })
 
-  it('lets a member see who has access and leave the board', async () => {
-    const vali: Member = { userId: 1, email: ME.email, fullName: ME.fullName, role: 'EDITOR' }
-    const owner: Member = { userId: 9, email: 'sobir@example.com', fullName: 'Sobir', role: 'OWNER' }
-    fakeBackend({ role: 'EDITOR', members: [owner, vali] })
-    await openBoard()
+    it('lets a member see who has access and leave the board', async () => {
+      const me: Member = { userId: 1, email: ME.email, fullName: ME.fullName, role: 'EDITOR' }
+      const owner: Member = { userId: 9, email: 'sobir@example.com', fullName: 'Sobir', role: 'OWNER' }
+      fakeBackend({ role: 'EDITOR', members: [owner, me] })
+      await openBoard()
 
-    await userEvent.click(screen.getByRole('button', { name: 'Share' }))
-    const dialog = screen.getByRole('dialog')
-    expect(await within(dialog).findByRole('listitem', { name: 'Sobir' })).toHaveTextContent('Owner')
-    expect(within(dialog).queryByLabelText('Email')).toBeNull()
-    expect(within(dialog).queryByRole('combobox')).toBeNull()
+      await userEvent.click(screen.getByRole('button', { name: 'Share' }))
+      const dialog = screen.getByRole('dialog')
+      expect(await within(dialog).findByRole('listitem', { name: 'Sobir' })).toHaveTextContent('Owner')
+      expect(within(dialog).queryByLabelText('Email')).toBeNull()
+      expect(within(dialog).queryByRole('combobox')).toBeNull()
 
-    await userEvent.click(within(dialog).getByRole('button', { name: 'Leave board' }))
+      await userEvent.click(within(dialog).getByRole('button', { name: 'Leave board' }))
 
-    expect(await screen.findByRole('heading', { name: 'My boards' })).toBeInTheDocument()
+      expect(await screen.findByRole('heading', { name: 'My boards' })).toBeInTheDocument()
+    })
   })
 
   describe('presence', () => {
@@ -419,7 +536,7 @@ describe('BoardPage', () => {
 
     it('joins the board room and lists who is online, me first', async () => {
       fakeBackend()
-      await openBoard()
+      await openBoard({ join: false })
       expect(socketState.boardId).toBe(7)
       expect(screen.getByText('Connecting…')).toBeInTheDocument()
 
@@ -436,7 +553,7 @@ describe('BoardPage', () => {
 
     it('collapses long lists', async () => {
       fakeBackend()
-      await openBoard()
+      await openBoard({ join: false })
       const many = Array.from({ length: 8 }, (_, i): OnlineUser => ({ ...vali, userId: 10 + i, name: `User ${i}` }))
 
       act(() => socketState.join({ online: [ali, ...many] }))
@@ -448,7 +565,7 @@ describe('BoardPage', () => {
 
     it('shows when the connection drops and recovers', async () => {
       fakeBackend()
-      await openBoard()
+      await openBoard({ join: false })
       act(() => socketState.join({ online: [ali] }))
 
       act(() => socketState.require().onStatus('reconnecting'))
