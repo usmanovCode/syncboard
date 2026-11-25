@@ -1,8 +1,13 @@
 import type { ReactNode } from 'react'
+import { useTranslation } from 'react-i18next'
+import { LanguageSwitcher } from './LanguageSwitcher'
 
 export function AuthLayout({ title, subtitle, children }: { title: string; subtitle: string; children: ReactNode }) {
   return (
-    <main className="flex min-h-screen items-center justify-center bg-slate-50 px-4 py-12">
+    <main className="relative flex min-h-screen items-center justify-center bg-slate-50 px-4 py-12">
+      <div className="absolute top-4 right-4">
+        <LanguageSwitcher />
+      </div>
       <div className="w-full max-w-sm">
         <p className="mb-8 text-center text-2xl font-bold tracking-tight text-indigo-600">SyncBoard</p>
         <div className="rounded-2xl border border-slate-200 bg-white p-8 shadow-sm">
@@ -25,13 +30,14 @@ export function FormAlert({ message }: { message: string | null }) {
 }
 
 export function SubmitButton({ loading, children }: { loading: boolean; children: ReactNode }) {
+  const { t } = useTranslation()
   return (
     <button
       type="submit"
       disabled={loading}
       className="mt-2 w-full rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-indigo-500 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600 disabled:cursor-not-allowed disabled:opacity-60"
     >
-      {loading ? 'Iltimos, kuting…' : children}
+      {loading ? t('common.pleaseWait') : children}
     </button>
   )
 }

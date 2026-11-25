@@ -91,7 +91,7 @@ class BoardControllerIntegrationTest {
         createBoard(ali, "   ")
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("VALIDATION_FAILED"))
-                .andExpect(jsonPath("$.errors.name").value("Doska nomi kiritilishi shart"));
+                .andExpect(jsonPath("$.errors.name").value("Board name is required"));
 
         createBoard(ali, "x".repeat(101))
                 .andExpect(status().isBadRequest())

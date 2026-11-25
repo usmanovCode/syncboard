@@ -30,7 +30,7 @@ public class AuthService {
     public UserResponse register(RegisterRequest request) {
         String email = normalizeEmail(request.email());
         if (users.existsByEmail(email)) {
-            throw new ApiException(HttpStatus.CONFLICT, "EMAIL_TAKEN", "Bu email bilan foydalanuvchi allaqachon mavjud");
+            throw new ApiException(HttpStatus.CONFLICT, "EMAIL_TAKEN", "error.emailTaken");
         }
         User user = new User(email, passwordEncoder.encode(request.password()), request.fullName().trim());
         return UserResponse.from(users.saveAndFlush(user));
@@ -42,7 +42,7 @@ public class AuthService {
         User user = users.findByEmail(normalizeEmail(request.email()))
                 .filter(u -> passwordEncoder.matches(request.password(), u.getPasswordHash()))
                 .orElseThrow(() -> new ApiException(
-                        HttpStatus.UNAUTHORIZED, "INVALID_CREDENTIALS", "Email yoki parol noto'g'ri"));
+                        HttpStatus.UNAUTHORIZED, "INVALID_CREDENTIALS", "error.invalidCredentials"));
         return new LoginResponse(jwtService.issueAccessToken(user), "Bearer", jwtService.ttlSeconds());
     }
 
@@ -51,7 +51,7 @@ public class AuthService {
         return users.findById(userId)
                 .map(UserResponse::from)
                 .orElseThrow(() -> new ApiException(
-                        HttpStatus.UNAUTHORIZED, "USER_NOT_FOUND", "Foydalanuvchi topilmadi"));
+                        HttpStatus.UNAUTHORIZED, "USER_NOT_FOUND", "error.userNotFound"));
     }
 
     static String normalizeEmail(String email) {

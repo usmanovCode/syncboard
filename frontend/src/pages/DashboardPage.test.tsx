@@ -83,20 +83,20 @@ describe('DashboardPage', () => {
     fakeBackend([])
     renderDashboard()
 
-    expect(await screen.findByText("Hali doskalar yo'q")).toBeInTheDocument()
+    expect(await screen.findByText('No boards yet')).toBeInTheDocument()
   })
 
   it('creates a board and validates the name first', async () => {
     const fetchMock = fakeBackend([board(1, 'Eski doska')])
     renderDashboard()
 
-    await userEvent.click(await screen.findByRole('button', { name: '+ Yangi doska' }))
-    await userEvent.click(screen.getByRole('button', { name: 'Yaratish' }))
-    expect(screen.getByText('Doska nomi kiritilishi shart')).toBeInTheDocument()
+    await userEvent.click(await screen.findByRole('button', { name: '+ New board' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Create' }))
+    expect(screen.getByText('Board name is required')).toBeInTheDocument()
     expect(fetchMock).not.toHaveBeenCalledWith('/api/boards', expect.objectContaining({ method: 'POST' }))
 
-    await userEvent.type(screen.getByLabelText('Yangi doska nomi'), '  Yangi g‘oyalar  ')
-    await userEvent.click(screen.getByRole('button', { name: 'Yaratish' }))
+    await userEvent.type(screen.getByLabelText('New board name'), '  Yangi g‘oyalar  ')
+    await userEvent.click(screen.getByRole('button', { name: 'Create' }))
 
     expect(await screen.findByRole('heading', { name: 'Yangi g‘oyalar' })).toBeInTheDocument()
     expect(boardTitles()).toEqual(['Yangi g‘oyalar', 'Eski doska'])
@@ -107,7 +107,7 @@ describe('DashboardPage', () => {
   it('shows server field errors when creating fails', async () => {
     const fetchMock = fakeBackend([])
     renderDashboard()
-    await userEvent.click(await screen.findByRole('button', { name: '+ Yangi doska' }))
+    await userEvent.click(await screen.findByRole('button', { name: '+ New board' }))
     fetchMock.mockResolvedValueOnce(
       jsonResponse(400, {
         detail: "Ma'lumotlar noto'g'ri",
@@ -116,8 +116,8 @@ describe('DashboardPage', () => {
       }),
     )
 
-    await userEvent.type(screen.getByLabelText('Yangi doska nomi'), 'Doska')
-    await userEvent.click(screen.getByRole('button', { name: 'Yaratish' }))
+    await userEvent.type(screen.getByLabelText('New board name'), 'Doska')
+    await userEvent.click(screen.getByRole('button', { name: 'Create' }))
 
     expect(await screen.findByText('Serverdagi xato')).toBeInTheDocument()
   })
@@ -127,8 +127,8 @@ describe('DashboardPage', () => {
     renderDashboard()
 
     const card = await screen.findByRole('listitem', { name: 'Ikkinchi' })
-    await userEvent.click(within(card).getByRole('button', { name: "Nomini o'zgartirish" }))
-    const input = within(card).getByLabelText('Yangi nom')
+    await userEvent.click(within(card).getByRole('button', { name: 'Rename' }))
+    const input = within(card).getByLabelText('New name')
     await userEvent.clear(input)
     await userEvent.type(input, 'Qayta nomlangan{Enter}')
 
@@ -141,8 +141,8 @@ describe('DashboardPage', () => {
     renderDashboard()
 
     const card = await screen.findByRole('listitem', { name: 'Birinchi' })
-    await userEvent.click(within(card).getByRole('button', { name: "Nomini o'zgartirish" }))
-    await userEvent.type(within(card).getByLabelText('Yangi nom'), ' xxx{Escape}')
+    await userEvent.click(within(card).getByRole('button', { name: 'Rename' }))
+    await userEvent.type(within(card).getByLabelText('New name'), ' xxx{Escape}')
 
     expect(screen.getByRole('heading', { name: 'Birinchi' })).toBeInTheDocument()
     expect(fetchMock).not.toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ method: 'PATCH' }))
@@ -153,10 +153,10 @@ describe('DashboardPage', () => {
     renderDashboard()
 
     const card = await screen.findByRole('listitem', { name: 'Birinchi' })
-    await userEvent.click(within(card).getByRole('button', { name: "O'chirish" }))
+    await userEvent.click(within(card).getByRole('button', { name: 'Delete' }))
     expect(fetchMock).not.toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ method: 'DELETE' }))
 
-    await userEvent.click(within(card).getByRole('button', { name: "Ha, o'chirish" }))
+    await userEvent.click(within(card).getByRole('button', { name: 'Yes, delete' }))
 
     await vi.waitFor(() => expect(boardTitles()).toEqual(['Ikkinchi']))
     expect(fetchMock).toHaveBeenCalledWith('/api/boards/1', expect.objectContaining({ method: 'DELETE' }))
@@ -177,7 +177,7 @@ describe('DashboardPage', () => {
     renderDashboard()
 
     expect(await screen.findByRole('alert')).toHaveTextContent('Server xatosi')
-    await userEvent.click(screen.getByRole('button', { name: 'Qayta urinish' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Try again' }))
     expect(await screen.findByRole('heading', { name: 'Birinchi' })).toBeInTheDocument()
   })
 
@@ -187,7 +187,7 @@ describe('DashboardPage', () => {
     fetchMock.mockImplementationOnce(async () => jsonResponse(401, { code: 'UNAUTHORIZED' }))
     renderDashboard()
 
-    expect(await screen.findByRole('heading', { name: 'Tizimga kirish' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'Sign in' })).toBeInTheDocument()
     expect(localStorage.getItem('syncboard.accessToken')).toBeNull()
   })
 })

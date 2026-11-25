@@ -1,6 +1,9 @@
 import { useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import type { Board } from '../api/boards'
 import { ApiError } from '../api/client'
+import { currentLanguage } from '../i18n'
+import { formatDate } from '../i18n/format'
 import { BoardNameForm } from './BoardNameForm'
 
 type Props = {
@@ -13,10 +16,8 @@ type Props = {
 
 type Mode = 'view' | 'rename' | 'confirmDelete'
 
-// "Nov 25, 2026"
-const dateFormat = new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-
 export function BoardCard({ board, canManage, onRename, onDelete }: Props) {
+  const { t } = useTranslation()
   const [mode, setMode] = useState<Mode>('view')
   const [deleting, setDeleting] = useState(false)
   const [deleteError, setDeleteError] = useState<string | null>(null)
@@ -27,7 +28,7 @@ export function BoardCard({ board, canManage, onRename, onDelete }: Props) {
     try {
       await onDelete()
     } catch (err) {
-      setDeleteError(err instanceof ApiError ? err.message : 'Kutilmagan xatolik yuz berdi')
+      setDeleteError(err instanceof ApiError ? err.message : t('errors.unexpected'))
       setDeleting(false)
     }
   }
@@ -39,9 +40,9 @@ export function BoardCard({ board, canManage, onRename, onDelete }: Props) {
     >
       {mode === 'rename' ? (
         <BoardNameForm
-          label="Yangi nom"
+          label={t('dashboard.renameLabel')}
           initialName={board.name}
-          submitLabel="Saqlash"
+          submitLabel={t('common.save')}
           onSubmit={async (name) => {
             await onRename(name)
             setMode('view')
@@ -53,7 +54,9 @@ export function BoardCard({ board, canManage, onRename, onDelete }: Props) {
           <h2 className="truncate text-base font-semibold text-slate-900" title={board.name}>
             {board.name}
           </h2>
-          <p className="mt-1 text-xs text-slate-500">Yangilangan: {dateFormat.format(new Date(board.updatedAt))}</p>
+          <p className="mt-1 text-xs text-slate-500">
+            {t('dashboard.updated', { date: formatDate(board.updatedAt, currentLanguage()) })}
+          </p>
         </>
       )}
 
@@ -63,7 +66,7 @@ export function BoardCard({ board, canManage, onRename, onDelete }: Props) {
             onClick={() => setMode('rename')}
             className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-100"
           >
-            Nomini o'zgartirish
+            {t('dashboard.rename')}
           </button>
           <button
             onClick={() => {
@@ -72,14 +75,14 @@ export function BoardCard({ board, canManage, onRename, onDelete }: Props) {
             }}
             className="rounded-lg px-3 py-1.5 text-sm text-red-600 hover:bg-red-50"
           >
-            O'chirish
+            {t('dashboard.delete')}
           </button>
         </div>
       )}
 
       {mode === 'confirmDelete' && (
-        <div className="mt-auto pt-4" role="group" aria-label="O'chirishni tasdiqlash">
-          <p className="text-sm text-slate-700">Doska butunlay o'chiriladi. Davom etasizmi?</p>
+        <div className="mt-auto pt-4" role="group" aria-label={t('dashboard.deleteConfirmLabel')}>
+          <p className="text-sm text-slate-700">{t('dashboard.deleteConfirm')}</p>
           {deleteError && <p className="mt-1 text-xs text-red-600">{deleteError}</p>}
           <div className="mt-2 flex gap-2">
             <button
@@ -87,14 +90,14 @@ export function BoardCard({ board, canManage, onRename, onDelete }: Props) {
               disabled={deleting}
               className="rounded-lg bg-red-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-red-500 disabled:opacity-60"
             >
-              {deleting ? "O'chirilmoqda…" : "Ha, o'chirish"}
+              {deleting ? t('dashboard.deleting') : t('dashboard.deleteYes')}
             </button>
             <button
               onClick={() => setMode('view')}
               disabled={deleting}
               className="rounded-lg px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-100"
             >
-              Bekor qilish
+              {t('common.cancel')}
             </button>
           </div>
         </div>

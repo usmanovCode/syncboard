@@ -12,8 +12,8 @@ public final class BoardDtos {
 
     /** Used for both create and rename. */
     public record BoardRequest(
-            @NotBlank(message = "Doska nomi kiritilishi shart")
-            @Size(max = 100, message = "Doska nomi 100 belgidan oshmasligi kerak")
+            @NotBlank(message = "{validation.boardName.required}")
+            @Size(max = 100, message = "{validation.boardName.tooLong}")
             String name) {
     }
 

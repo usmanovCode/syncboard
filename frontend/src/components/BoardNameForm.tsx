@@ -1,4 +1,5 @@
 import { useId, useState, type FormEvent, type KeyboardEvent } from 'react'
+import { useTranslation } from 'react-i18next'
 import { BOARD_NAME_MAX, validateBoardName } from '../api/boards'
 import { ApiError } from '../api/client'
 
@@ -13,6 +14,7 @@ type Props = {
 
 /** Inline name editor used for both creating and renaming a board. Enter saves, Escape cancels. */
 export function BoardNameForm({ label, initialName = '', submitLabel, onSubmit, onCancel }: Props) {
+  const { t } = useTranslation()
   const id = useId()
   const [name, setName] = useState(initialName)
   const [error, setError] = useState<string>()
@@ -20,7 +22,7 @@ export function BoardNameForm({ label, initialName = '', submitLabel, onSubmit, 
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    const found = validateBoardName(name)
+    const found = validateBoardName(name, t)
     setError(found)
     if (found) return
 
@@ -28,7 +30,7 @@ export function BoardNameForm({ label, initialName = '', submitLabel, onSubmit, 
     try {
       await onSubmit(name.trim())
     } catch (err) {
-      setError(err instanceof ApiError ? (err.fieldErrors.name ?? err.message) : 'Kutilmagan xatolik yuz berdi')
+      setError(err instanceof ApiError ? (err.fieldErrors.name ?? err.message) : t('errors.unexpected'))
       setSaving(false)
     }
   }
@@ -48,7 +50,7 @@ export function BoardNameForm({ label, initialName = '', submitLabel, onSubmit, 
         onChange={(e) => setName(e.target.value)}
         onKeyDown={handleKeyDown}
         maxLength={BOARD_NAME_MAX + 20}
-        placeholder="Doska nomi"
+        placeholder={t('dashboard.boardNamePlaceholder')}
         autoFocus
         aria-invalid={error ? true : undefined}
         aria-describedby={error ? `${id}-error` : undefined}
@@ -69,7 +71,7 @@ export function BoardNameForm({ label, initialName = '', submitLabel, onSubmit, 
           disabled={saving}
           className="rounded-lg bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-500 disabled:opacity-60"
         >
-          {saving ? 'Saqlanmoqda…' : submitLabel}
+          {saving ? t('common.saving') : submitLabel}
         </button>
         <button
           type="button"
@@ -77,7 +79,7 @@ export function BoardNameForm({ label, initialName = '', submitLabel, onSubmit, 
           disabled={saving}
           className="rounded-lg px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-100"
         >
-          Bekor qilish
+          {t('common.cancel')}
         </button>
       </div>
     </form>

@@ -1,10 +1,12 @@
+import { useTranslation } from 'react-i18next'
 import { Navigate, Outlet, useLocation } from 'react-router'
 import { useAuth } from './authContext'
 
 function FullPageSpinner() {
+  const { t } = useTranslation()
   return (
     <div className="flex min-h-screen items-center justify-center text-slate-500" role="status">
-      Yuklanmoqda…
+      {t('common.loading')}
     </div>
   )
 }

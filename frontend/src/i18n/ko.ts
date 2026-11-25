@@ -1,0 +1,75 @@
+import type { en } from './en'
+
+/** Same keys as `en`, any string values. A missing or extra key is a type error. */
+type Translations<T> = { [K in keyof T]: T[K] extends string ? string : Translations<T[K]> }
+
+export const ko: Translations<typeof en> = {
+  common: {
+    appName: 'SyncBoard',
+    loading: '불러오는 중…',
+    pleaseWait: '잠시만 기다려 주세요…',
+    cancel: '취소',
+    save: '저장',
+    saving: '저장 중…',
+    tryAgain: '다시 시도',
+    logout: '로그아웃',
+    language: '언어',
+  },
+  errors: {
+    unexpected: '문제가 발생했습니다. 다시 시도해 주세요.',
+    network: '서버에 연결할 수 없습니다. 인터넷 연결이나 백엔드 실행 여부를 확인하세요.',
+    unauthorized: '로그인이 필요합니다',
+    requestFailed: '요청을 처리하지 못했습니다 ({{status}})',
+  },
+  validation: {
+    emailRequired: '이메일을 입력하세요',
+    emailInvalid: '이메일 형식이 올바르지 않습니다',
+    passwordRequired: '비밀번호를 입력하세요',
+    passwordLength: '비밀번호는 {{min}}~{{max}}자여야 합니다',
+    passwordsMismatch: '비밀번호가 일치하지 않습니다',
+    fullNameRequired: '이름을 입력하세요',
+    fullNameTooLong: '이름이 너무 깁니다',
+    boardNameRequired: '보드 이름을 입력하세요',
+    boardNameTooLong: '보드 이름은 최대 {{max}}자까지 입력할 수 있습니다',
+  },
+  auth: {
+    email: '이메일',
+    emailPlaceholder: 'you@example.com',
+    password: '비밀번호',
+    login: {
+      title: '로그인',
+      subtitle: '계정 정보를 입력하세요',
+      submit: '로그인',
+      noAccount: '계정이 없으신가요?',
+      toRegister: '회원가입',
+    },
+    register: {
+      title: '회원가입',
+      subtitle: 'SyncBoard를 시작해 보세요',
+      fullName: '이름',
+      fullNamePlaceholder: '홍길동',
+      confirmPassword: '비밀번호 확인',
+      submit: '가입하기',
+      hasAccount: '이미 계정이 있으신가요?',
+      toLogin: '로그인',
+    },
+  },
+  dashboard: {
+    title: '내 보드',
+    newBoard: '+ 새 보드',
+    newBoardTitle: '새 보드',
+    newBoardName: '새 보드 이름',
+    create: '만들기',
+    boardNamePlaceholder: '보드 이름',
+    emptyTitle: '아직 보드가 없습니다',
+    emptyHint: '첫 보드를 만들고 그림을 그려 보세요.',
+    updated: '{{date}} 수정됨',
+    rename: '이름 변경',
+    renameLabel: '새 이름',
+    delete: '삭제',
+    deleteConfirmLabel: '삭제 확인',
+    deleteConfirm: '이 보드는 영구적으로 삭제됩니다. 계속하시겠습니까?',
+    deleteYes: '삭제',
+    deleting: '삭제 중…',
+  },
+}

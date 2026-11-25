@@ -1,3 +1,5 @@
+import { currentLanguage, i18n } from '../i18n'
+
 const TOKEN_KEY = 'syncboard.accessToken'
 
 export const tokenStorage = {
@@ -27,7 +29,8 @@ export class ApiError extends Error {
 type ProblemBody = { detail?: string; code?: string; errors?: Record<string, string> }
 
 export async function apiFetch<T>(path: string, init: { method?: string; body?: unknown } = {}): Promise<T> {
-  const headers: Record<string, string> = { Accept: 'application/json' }
+  // The backend localizes error messages (ProblemDetail.detail, field errors) from Accept-Language.
+  const headers: Record<string, string> = { Accept: 'application/json', 'Accept-Language': currentLanguage() }
   if (init.body !== undefined) headers['Content-Type'] = 'application/json'
   const token = tokenStorage.get()
   if (token) headers.Authorization = `Bearer ${token}`
@@ -40,7 +43,7 @@ export async function apiFetch<T>(path: string, init: { method?: string; body?: 
       body: init.body === undefined ? undefined : JSON.stringify(init.body),
     })
   } catch {
-    throw new ApiError(0, "Serverga ulanib bo'lmadi. Internet yoki backend ishlayotganini tekshiring.")
+    throw new ApiError(0, i18n.t('errors.network'))
   }
 
   const text = await response.text()
@@ -54,7 +57,9 @@ export async function apiFetch<T>(path: string, init: { method?: string; body?: 
   if (!response.ok) {
     const problem = (data ?? {}) as ProblemBody
     const fallback =
-      response.status === 401 ? "Avtorizatsiyadan o'tilmagan" : `So'rov bajarilmadi (${response.status})`
+      response.status === 401
+        ? i18n.t('errors.unauthorized')
+        : i18n.t('errors.requestFailed', { status: response.status })
     throw new ApiError(response.status, problem.detail ?? fallback, problem.code, problem.errors)
   }
   return data as T

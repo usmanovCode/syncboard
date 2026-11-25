@@ -1,15 +1,18 @@
 import { useCallback, useEffect, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { boardsApi, type Board } from '../api/boards'
 import { ApiError } from '../api/client'
 import { useAuth } from '../auth/authContext'
 import { AppHeader } from '../components/AppHeader'
 import { BoardCard } from '../components/BoardCard'
 import { BoardNameForm } from '../components/BoardNameForm'
+import { i18n } from '../i18n'
 
 type LoadState = { status: 'loading' } | { status: 'error'; message: string } | { status: 'ready'; boards: Board[] }
 
 export function DashboardPage() {
   const { user, logout } = useAuth()
+  const { t } = useTranslation()
   const [state, setState] = useState<LoadState>({ status: 'loading' })
   const [creating, setCreating] = useState(false)
 
@@ -34,7 +37,7 @@ export function DashboardPage() {
         if (error instanceof ApiError && error.status === 401) return logout()
         setState({
           status: 'error',
-          message: error instanceof ApiError ? error.message : 'Kutilmagan xatolik yuz berdi',
+          message: error instanceof ApiError ? error.message : i18n.t('errors.unexpected'),
         })
       },
     )
@@ -75,20 +78,20 @@ export function DashboardPage() {
       <AppHeader />
       <main className="mx-auto max-w-6xl px-4 py-8">
         <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
-          <h1 className="text-2xl font-semibold text-slate-900">Doskalarim</h1>
+          <h1 className="text-2xl font-semibold text-slate-900">{t('dashboard.title')}</h1>
           {state.status === 'ready' && !creating && (
             <button
               onClick={() => setCreating(true)}
               className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500"
             >
-              + Yangi doska
+              {t('dashboard.newBoard')}
             </button>
           )}
         </div>
 
         {state.status === 'loading' && (
           <p role="status" className="text-slate-500">
-            Yuklanmoqda…
+            {t('common.loading')}
           </p>
         )}
 
@@ -96,7 +99,7 @@ export function DashboardPage() {
           <div role="alert" className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
             {state.message}{' '}
             <button onClick={retry}className="font-medium underline">
-              Qayta urinish
+              {t('common.tryAgain')}
             </button>
           </div>
         )}
@@ -105,10 +108,10 @@ export function DashboardPage() {
           <>
             {creating && (
               <section className="mb-6 max-w-md rounded-2xl border border-indigo-200 bg-white p-5 shadow-sm">
-                <h2 className="mb-3 text-sm font-medium text-slate-700">Yangi doska</h2>
+                <h2 className="mb-3 text-sm font-medium text-slate-700">{t('dashboard.newBoardTitle')}</h2>
                 <BoardNameForm
-                  label="Yangi doska nomi"
-                  submitLabel="Yaratish"
+                  label={t('dashboard.newBoardName')}
+                  submitLabel={t('dashboard.create')}
                   onSubmit={createBoard}
                   onCancel={() => setCreating(false)}
                 />
@@ -117,8 +120,8 @@ export function DashboardPage() {
 
             {state.boards.length === 0 && !creating ? (
               <div className="rounded-2xl border border-dashed border-slate-300 bg-white px-6 py-12 text-center">
-                <p className="font-medium text-slate-700">Hali doskalar yo'q</p>
-                <p className="mt-1 text-sm text-slate-500">Birinchi doskangizni yarating va chizishni boshlang.</p>
+                <p className="font-medium text-slate-700">{t('dashboard.emptyTitle')}</p>
+                <p className="mt-1 text-sm text-slate-500">{t('dashboard.emptyHint')}</p>
               </div>
             ) : (
               <ul className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">

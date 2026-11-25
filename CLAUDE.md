@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-SyncBoard is a monorepo with two independent apps: `backend/` (Spring Boot 3.5, Java 21, Maven, PostgreSQL) and `frontend/` (Vite, React 19, TypeScript, Tailwind CSS v4). UI text and user-facing API error messages are in Uzbek (Latin script); code, identifiers and comments are in English.
+SyncBoard is a monorepo with two independent apps: `backend/` (Spring Boot 3.5, Java 21, Maven, PostgreSQL) and `frontend/` (Vite, React 19, TypeScript, Tailwind CSS v4). The UI and user-facing API error messages exist in English (default) and Korean; code, identifiers and comments are in English. Never hard-code user-facing text: add it to both languages (see **i18n** below).
 
 ## Commands
 
@@ -39,10 +39,14 @@ npm run build                               # tsc -b && vite build
 
 **Boards.** A board is a drawing canvas, not a kanban board. `boards.owner_id` is the creator. Sharing comes later through a `board_members` table: `BoardRepository.findDashboardBoards` is the query to extend so shared boards also appear on the dashboard. Rename and delete stay owner-only (`findByIdAndOwnerId`). Someone else's board returns the same `404 BOARD_NOT_FOUND` as a missing one. `BoardResponse.ownerId` lets the frontend hide owner-only actions (`BoardCard`'s `canManage`). The dashboard is sorted by `updated_at` desc.
 
+**i18n (spans both apps).** Supported languages are `en` (default) and `ko`.
+- Frontend: `i18next` + `react-i18next`, initialized in `src/i18n/index.ts`, which `main.tsx` and the test setup import. `src/i18n/en.ts` defines the keys. `ko.ts` must have the same shape, and `i18next.d.ts` type-checks every `t('...')` key, so `tsc` fails on missing or unknown keys. The language is the stored choice (`localStorage` `syncboard.lang`), else `ko` for Korean browsers, else `en`. `LanguageSwitcher` sits in the app header and on the auth pages. Format dates with `i18n/format.ts` (`Nov 25, 2026` / `2026년 11월 25일`), not ad-hoc `Intl` calls.
+- `apiFetch` sends `Accept-Language` with the UI language. The backend (`LocaleConfig`, an `AcceptHeaderLocaleResolver` restricted to en/ko, English fallback) resolves `ApiException` keys and Bean Validation messages (`message = "{validation.x}"`) through Spring's `MessageSource`. As a result, `detail` and field errors arrive already translated, and the frontend shows them as-is. Property values are not run through `MessageFormat`. `{min}`/`{max}` are Bean Validation placeholders.
+
 **Backend** (`com.syncboard`, packaged by feature: `auth`, `user`, `board`, `config`, `common`):
 - JWT issuing and validation both use Spring's built-in OAuth2 resource server with Nimbus (HS256): `JwtService` signs via the `JwtEncoder` bean, and `SecurityConfig`'s `JwtDecoder` validates incoming requests. There is **no custom auth filter**. To protect a new endpoint, do nothing (everything except register/login is authenticated by default). To get the caller, take `@AuthenticationPrincipal Jwt jwt`; `jwt.getSubject()` is the user id.
 - Emails are normalized (trim + lowercase) in `AuthService` before every lookup and insert. Login returns the same 401 `INVALID_CREDENTIALS` for unknown email and wrong password.
-- Errors: throw `ApiException(status, code, message)`. `GlobalExceptionHandler` turns everything into `ProblemDetail` JSON with extra `code` and, for validation failures, `errors` (field → message). The frontend depends on this shape.
+- Errors: throw `ApiException(status, code, messageKey)`; the key lives in `messages.properties` (English) and `messages_ko.properties`. `GlobalExceptionHandler` turns everything into `ProblemDetail` JSON with extra `code` and, for validation failures, `errors` (field → message). The frontend depends on this shape.
 - Schema is owned by Flyway (`src/main/resources/db/migration`, `V<n>__name.sql`); Hibernate runs with `ddl-auto: validate`, so entity changes need a new migration.
 - Password fields are capped at 72 characters because of BCrypt's input limit.
 
@@ -51,5 +55,5 @@ npm run build                               # tsc -b && vite build
 - `auth/AuthProvider.tsx` is the source of truth for the session. On startup it validates a stored token via `/api/auth/me` and falls back to anonymous on any failure. `register()` logs in automatically afterwards. The context object and `useAuth` hook live separately in `auth/authContext.ts`, which keeps react-refresh happy.
 - Routing: `App.tsx` contains only `<Routes>`; the router is supplied by `main.tsx` (`BrowserRouter`) or by tests (`MemoryRouter`). `RequireAuth` and `RequireGuest` in `auth/routeGuards.tsx` are layout routes. `RequireAuth` passes `state.from` so login can return the user to the page they wanted.
 - Pages validate on the client with the same rules as the backend DTOs and also show the server's `fieldErrors`. Keep the two in sync when changing constraints.
-- Tests render `<MemoryRouter><AuthProvider><App/>` and stub `fetch` with `vi.stubGlobal`. `src/test/setup.ts` handles cleanup, clears `localStorage` and restores mocks.
+- Tests render `<MemoryRouter><AuthProvider><App/>` and stub `fetch` with `vi.stubGlobal`. `src/test/setup.ts` handles cleanup, clears `localStorage`, restores mocks and resets the language to English, so tests assert English text.
 - Tailwind v4 is wired through the `@tailwindcss/vite` plugin and `@import 'tailwindcss'` in `index.css`. There is no `tailwind.config.js`.

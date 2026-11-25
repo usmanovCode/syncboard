@@ -2,6 +2,8 @@ package com.syncboard.common;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
+import org.springframework.context.MessageSource;
+import org.springframework.context.i18n.LocaleContextHolder;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
@@ -18,16 +20,21 @@ import org.springframework.web.servlet.mvc.method.annotation.ResponseEntityExcep
 /**
  * All errors are returned as RFC 9457 {@code ProblemDetail} JSON:
  * {@code { status, title, detail, code, errors? }}. {@code errors} maps field name to message for
- * validation failures. The frontend's {@code ApiError} parses exactly this shape.
+ * validation failures. {@code detail} and field messages are in the request's language
+ * (Accept-Language, see {@code LocaleConfig}). The frontend's {@code ApiError} parses exactly this shape.
  */
 @RestControllerAdvice
 public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
 
+    private final MessageSource messages;
+
+    public GlobalExceptionHandler(MessageSource messages) {
+        this.messages = messages;
+    }
+
     @ExceptionHandler(ApiException.class)
     ProblemDetail handleApiException(ApiException ex) {
-        ProblemDetail problem = ProblemDetail.forStatusAndDetail(ex.getStatus(), ex.getMessage());
-        problem.setProperty("code", ex.getCode());
-        return problem;
+        return problem(ex.getStatus(), ex.getCode(), ex.getMessageKey());
     }
 
     /**
@@ -37,12 +44,9 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
     @ExceptionHandler(DataIntegrityViolationException.class)
     ProblemDetail handleDataIntegrity(DataIntegrityViolationException ex) {
         String cause = String.valueOf(ex.getMostSpecificCause().getMessage());
-        boolean emailTaken = cause.contains("uk_users_email");
-        ProblemDetail problem = ProblemDetail.forStatusAndDetail(
-                HttpStatus.CONFLICT,
-                emailTaken ? "Bu email bilan foydalanuvchi allaqachon mavjud" : "Ma'lumotlar ziddiyati yuz berdi");
-        problem.setProperty("code", emailTaken ? "EMAIL_TAKEN" : "DATA_CONFLICT");
-        return problem;
+        return cause.contains("uk_users_email")
+                ? problem(HttpStatus.CONFLICT, "EMAIL_TAKEN", "error.emailTaken")
+                : problem(HttpStatus.CONFLICT, "DATA_CONFLICT", "error.dataConflict");
     }
 
     @Override
@@ -52,9 +56,17 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
         for (FieldError error : ex.getBindingResult().getFieldErrors()) {
             errors.putIfAbsent(error.getField(), error.getDefaultMessage());
         }
-        ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, "Ma'lumotlar noto'g'ri");
-        problem.setProperty("code", "VALIDATION_FAILED");
+        // Field messages are already localized: Bean Validation resolves {validation.*} keys through
+        // the MessageSource in the request locale.
+        ProblemDetail problem = problem(HttpStatus.BAD_REQUEST, "VALIDATION_FAILED", "error.validationFailed");
         problem.setProperty("errors", errors);
         return ResponseEntity.badRequest().body(problem);
+    }
+
+    private ProblemDetail problem(HttpStatus status, String code, String messageKey) {
+        String detail = messages.getMessage(messageKey, null, messageKey, LocaleContextHolder.getLocale());
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(status, detail);
+        problem.setProperty("code", code);
+        return problem;
     }
 }

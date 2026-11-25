@@ -72,7 +72,33 @@ class AuthControllerIntegrationTest {
 
         login("ali@example.com", "not-the-password")
                 .andExpect(status().isUnauthorized())
-                .andExpect(jsonPath("$.code").value("INVALID_CREDENTIALS"));
+                .andExpect(jsonPath("$.code").value("INVALID_CREDENTIALS"))
+                .andExpect(jsonPath("$.detail").value("Incorrect email or password"));
+    }
+
+    @Test
+    void errorsFollowAcceptLanguage() throws Exception {
+        mvc.perform(post("/api/auth/login").header("Accept-Language", "ko-KR,ko;q=0.9")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"email\":\"nobody@example.com\",\"password\":\"whatever\"}"))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.detail").value("이메일 또는 비밀번호가 올바르지 않습니다"));
+
+        // Validation messages, including Bean Validation's {min}/{max} placeholders.
+        mvc.perform(post("/api/auth/register").header("Accept-Language", "ko")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"email\":\"\",\"password\":\"short\",\"fullName\":\"Ali\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.detail").value("입력값이 올바르지 않습니다"))
+                .andExpect(jsonPath("$.errors.email").value("이메일을 입력하세요"))
+                .andExpect(jsonPath("$.errors.password").value("비밀번호는 8~72자여야 합니다"));
+
+        // Unsupported languages fall back to English.
+        mvc.perform(post("/api/auth/register").header("Accept-Language", "uz")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"email\":\"\",\"password\":\"short\",\"fullName\":\"Ali\"}"))
+                .andExpect(jsonPath("$.errors.email").value("Email is required"))
+                .andExpect(jsonPath("$.errors.password").value("Password must be 8 to 72 characters"));
     }
 
     @Test

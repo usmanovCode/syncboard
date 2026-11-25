@@ -1,4 +1,6 @@
+import type { TFunction } from 'i18next'
 import { useState, type FormEvent } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Link, useLocation, useNavigate } from 'react-router'
 import { ApiError } from '../api/client'
 import { useAuth } from '../auth/authContext'
@@ -9,16 +11,17 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
 type Errors = Partial<Record<'email' | 'password', string>>
 
-function validate(email: string, password: string): Errors {
+function validate(email: string, password: string, t: TFunction): Errors {
   const errors: Errors = {}
-  if (!email.trim()) errors.email = 'Email kiritilishi shart'
-  else if (!EMAIL_RE.test(email.trim())) errors.email = "Email formati noto'g'ri"
-  if (!password) errors.password = 'Parol kiritilishi shart'
+  if (!email.trim()) errors.email = t('validation.emailRequired')
+  else if (!EMAIL_RE.test(email.trim())) errors.email = t('validation.emailInvalid')
+  if (!password) errors.password = t('validation.passwordRequired')
   return errors
 }
 
 export function LoginPage() {
   const { login } = useAuth()
+  const { t } = useTranslation()
   const navigate = useNavigate()
   const location = useLocation()
   const from = (location.state as { from?: string } | null)?.from ?? '/'
@@ -31,7 +34,7 @@ export function LoginPage() {
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    const found = validate(email, password)
+    const found = validate(email, password, t)
     setErrors(found)
     setFormError(null)
     if (Object.keys(found).length > 0) return
@@ -45,40 +48,40 @@ export function LoginPage() {
         setErrors(error.fieldErrors)
         setFormError(error.message)
       } else {
-        setFormError("Kutilmagan xatolik yuz berdi")
+        setFormError(t('errors.unexpected'))
       }
       setLoading(false)
     }
   }
 
   return (
-    <AuthLayout title="Tizimga kirish" subtitle="Hisobingizga kirish uchun ma'lumotlaringizni kiriting">
+    <AuthLayout title={t('auth.login.title')} subtitle={t('auth.login.subtitle')}>
       <FormAlert message={formError} />
       <form onSubmit={handleSubmit} noValidate>
         <TextField
-          label="Email"
+          label={t('auth.email')}
           type="email"
           autoComplete="email"
-          placeholder="siz@example.com"
+          placeholder={t('auth.emailPlaceholder')}
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           error={errors.email}
           autoFocus
         />
         <TextField
-          label="Parol"
+          label={t('auth.password')}
           type="password"
           autoComplete="current-password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           error={errors.password}
         />
-        <SubmitButton loading={loading}>Kirish</SubmitButton>
+        <SubmitButton loading={loading}>{t('auth.login.submit')}</SubmitButton>
       </form>
       <p className="mt-6 text-center text-sm text-slate-500">
-        Hisobingiz yo'qmi?{' '}
+        {t('auth.login.noAccount')}{' '}
         <Link to="/register" className="font-medium text-indigo-600 hover:text-indigo-500">
-          Ro'yxatdan o'ting
+          {t('auth.login.toRegister')}
         </Link>
       </p>
     </AuthLayout>

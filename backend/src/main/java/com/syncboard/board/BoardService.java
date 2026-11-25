@@ -29,7 +29,7 @@ public class BoardService {
     public BoardResponse create(long userId, BoardRequest request) {
         // A valid token can outlive its user; fail like /api/auth/me instead of hitting the FK.
         if (!users.existsById(userId)) {
-            throw new ApiException(HttpStatus.UNAUTHORIZED, "USER_NOT_FOUND", "Foydalanuvchi topilmadi");
+            throw new ApiException(HttpStatus.UNAUTHORIZED, "USER_NOT_FOUND", "error.userNotFound");
         }
         return BoardResponse.from(boards.saveAndFlush(new Board(userId, request.name().trim())));
     }
@@ -52,6 +52,6 @@ public class BoardService {
      */
     private Board findOwned(long userId, long boardId) {
         return boards.findByIdAndOwnerId(boardId, userId)
-                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "BOARD_NOT_FOUND", "Doska topilmadi"));
+                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "BOARD_NOT_FOUND", "error.boardNotFound"));
     }
 }

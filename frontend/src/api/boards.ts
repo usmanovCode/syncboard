@@ -1,3 +1,4 @@
+import type { TFunction } from 'i18next'
 import { apiFetch } from './client'
 
 /** A drawing canvas. `ownerId` tells own boards apart from shared ones (once board_members exists). */
@@ -12,10 +13,10 @@ export type Board = {
 export const BOARD_NAME_MAX = 100
 
 /** Same rules as BoardDtos.BoardRequest on the backend. */
-export function validateBoardName(name: string): string | undefined {
+export function validateBoardName(name: string, t: TFunction): string | undefined {
   const trimmed = name.trim()
-  if (!trimmed) return 'Doska nomi kiritilishi shart'
-  if (trimmed.length > BOARD_NAME_MAX) return `Doska nomi ${BOARD_NAME_MAX} belgidan oshmasligi kerak`
+  if (!trimmed) return t('validation.boardNameRequired')
+  if (trimmed.length > BOARD_NAME_MAX) return t('validation.boardNameTooLong', { max: BOARD_NAME_MAX })
   return undefined
 }
 

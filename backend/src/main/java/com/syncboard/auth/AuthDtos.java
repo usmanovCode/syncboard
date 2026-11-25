@@ -13,26 +13,26 @@ public final class AuthDtos {
     }
 
     public record RegisterRequest(
-            @NotBlank(message = "Email kiritilishi shart")
-            @Email(message = "Email formati noto'g'ri")
-            @Size(max = 255, message = "Email juda uzun")
+            @NotBlank(message = "{validation.email.required}")
+            @Email(message = "{validation.email.invalid}")
+            @Size(max = 255, message = "{validation.email.tooLong}")
             String email,
 
-            @NotBlank(message = "Parol kiritilishi shart")
-            @Size(min = 8, max = 72, message = "Parol 8 dan 72 gacha belgidan iborat bo'lishi kerak")
+            @NotBlank(message = "{validation.password.required}")
+            @Size(min = 8, max = 72, message = "{validation.password.length}")
             String password,
 
-            @NotBlank(message = "Ism kiritilishi shart")
-            @Size(max = 100, message = "Ism juda uzun")
+            @NotBlank(message = "{validation.fullName.required}")
+            @Size(max = 100, message = "{validation.fullName.tooLong}")
             String fullName) {
     }
 
     public record LoginRequest(
-            @NotBlank(message = "Email kiritilishi shart")
+            @NotBlank(message = "{validation.email.required}")
             String email,
 
-            @NotBlank(message = "Parol kiritilishi shart")
-            @Size(max = 72, message = "Parol juda uzun")
+            @NotBlank(message = "{validation.password.required}")
+            @Size(max = 72, message = "{validation.password.tooLong}")
             String password) {
     }
 

@@ -25,10 +25,10 @@ describe('LoginPage', () => {
     vi.stubGlobal('fetch', fetchMock)
     renderAt('/login')
 
-    await userEvent.click(screen.getByRole('button', { name: 'Kirish' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Sign in' }))
 
-    expect(screen.getByText('Email kiritilishi shart')).toBeInTheDocument()
-    expect(screen.getByText('Parol kiritilishi shart')).toBeInTheDocument()
+    expect(screen.getByText('Email is required')).toBeInTheDocument()
+    expect(screen.getByText('Password is required')).toBeInTheDocument()
     expect(fetchMock).not.toHaveBeenCalled()
   })
 
@@ -36,16 +36,16 @@ describe('LoginPage', () => {
     vi.stubGlobal(
       'fetch',
       vi.fn().mockResolvedValue(
-        jsonResponse(401, { status: 401, detail: "Email yoki parol noto'g'ri", code: 'INVALID_CREDENTIALS' }),
+        jsonResponse(401, { status: 401, detail: 'Incorrect email or password', code: 'INVALID_CREDENTIALS' }),
       ),
     )
     renderAt('/login')
 
     await userEvent.type(screen.getByLabelText('Email'), 'ali@example.com')
-    await userEvent.type(screen.getByLabelText('Parol'), 'wrong-password')
-    await userEvent.click(screen.getByRole('button', { name: 'Kirish' }))
+    await userEvent.type(screen.getByLabelText('Password'), 'wrong-password')
+    await userEvent.click(screen.getByRole('button', { name: 'Sign in' }))
 
-    expect(await screen.findByRole('alert')).toHaveTextContent("Email yoki parol noto'g'ri")
+    expect(await screen.findByRole('alert')).toHaveTextContent('Incorrect email or password')
     expect(localStorage.getItem('syncboard.accessToken')).toBeNull()
   })
 
@@ -63,10 +63,10 @@ describe('LoginPage', () => {
     renderAt('/login')
 
     await userEvent.type(screen.getByLabelText('Email'), 'ali@example.com')
-    await userEvent.type(screen.getByLabelText('Parol'), 'password123')
-    await userEvent.click(screen.getByRole('button', { name: 'Kirish' }))
+    await userEvent.type(screen.getByLabelText('Password'), 'password123')
+    await userEvent.click(screen.getByRole('button', { name: 'Sign in' }))
 
-    expect(await screen.findByRole('heading', { name: 'Doskalarim' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'My boards' })).toBeInTheDocument()
     expect(screen.getByText('Ali Valiyev')).toBeInTheDocument()
     expect(localStorage.getItem('syncboard.accessToken')).toBe('jwt-token')
     const meCall = fetchMock.mock.calls.find(([url]) => url === '/api/auth/me') as unknown as [string, RequestInit]
@@ -75,6 +75,6 @@ describe('LoginPage', () => {
 
   it('redirects anonymous users from / to /login', async () => {
     renderAt('/')
-    expect(await screen.findByRole('heading', { name: 'Tizimga kirish' })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'Sign in' })).toBeInTheDocument()
   })
 })
