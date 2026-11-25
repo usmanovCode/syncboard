@@ -2,6 +2,8 @@ package com.syncboard.realtime;
 
 import com.syncboard.board.BoardAccessService;
 import com.syncboard.common.ApiException;
+import com.syncboard.realtime.RealtimeDtos.CursorBroadcast;
+import com.syncboard.realtime.RealtimeDtos.CursorRequest;
 import com.syncboard.realtime.RealtimeDtos.ErrorMessage;
 import com.syncboard.realtime.RealtimeDtos.JoinResponse;
 import com.syncboard.realtime.RealtimeDtos.OnlineUser;
@@ -30,6 +32,7 @@ import org.springframework.web.socket.messaging.SessionDisconnectEvent;
  *   <li>subscribes to {@code /app/boards/{id}/join}, whose one-off reply is the current drawing and
  *       online list,</li>
  *   <li>sends ops to {@code /app/boards/{id}/ops}; accepted ops are broadcast with a seq to everyone,</li>
+ *   <li>sends its pointer to {@code /app/boards/{id}/cursor} (viewers too); relayed to the others,</li>
  *   <li>disconnects when leaving the page, which removes it from the online list.</li>
  * </ol>
  */
@@ -37,6 +40,7 @@ import org.springframework.web.socket.messaging.SessionDisconnectEvent;
 public class BoardRealtimeController {
 
     private static final int MAX_CLIENT_OP_ID = 64;
+    private static final double MAX_COORDINATE = 1_000_000;
 
     private final BoardAccessService access;
     private final PresenceRegistry presence;
@@ -84,9 +88,39 @@ public class BoardRealtimeController {
         }
     }
 
+    /**
+     * Live cursors. Not stored, not checked against the database (joining already was), and invalid or
+     * too frequent updates are dropped silently: a lost cursor frame is harmless, errors would be noise.
+     */
+    @MessageMapping("/boards/{boardId}/cursor")
+    public void cursor(@DestinationVariable long boardId, @Payload CursorRequest request, Principal principal,
+            SimpMessageHeaderAccessor headers) {
+        BoardPrincipal user = (BoardPrincipal) principal;
+        String sessionId = headers.getSessionId();
+        String cursorId = PresenceRegistry.cursorId(sessionId);
+        boolean gone = request == null || Boolean.TRUE.equals(request.gone());
+        CursorBroadcast cursor;
+        if (gone) {
+            // Never rate-limited: dropping it would leave a stale cursor on everyone's screen.
+            if (!presence.isJoined(sessionId, boardId)) {
+                return;
+            }
+            cursor = CursorBroadcast.gone(cursorId, user.userId());
+        } else if (request.x() != null && request.y() != null && isCoordinate(request.x()) && isCoordinate(request.y())
+                && presence.acceptCursor(sessionId, boardId, System.currentTimeMillis())) {
+            cursor = CursorBroadcast.at(cursorId, user.userId(), request.x(), request.y());
+        } else {
+            return;
+        }
+        messaging.convertAndSend("/topic/boards/" + boardId + "/cursors", cursor);
+    }
+
     @EventListener
     public void onDisconnect(SessionDisconnectEvent event) {
+        String cursorId = PresenceRegistry.cursorId(event.getSessionId());
+        long userId = event.getUser() instanceof BoardPrincipal user ? user.userId() : 0;
         for (long boardId : presence.leaveAll(event.getSessionId())) {
+            messaging.convertAndSend("/topic/boards/" + boardId + "/cursors", CursorBroadcast.gone(cursorId, userId));
             List<OnlineUser> online = presence.online(boardId);
             if (online.isEmpty()) {
                 rooms.close(boardId); // last one out: write the drawing back now
@@ -111,6 +145,10 @@ public class BoardRealtimeController {
     private void sendError(BoardPrincipal user, String code, String messageKey, String clientOpId) {
         String text = messages.getMessage(messageKey, null, messageKey, user.locale());
         messaging.convertAndSendToUser(user.getName(), "/queue/errors", new ErrorMessage(code, text, clientOpId));
+    }
+
+    private static boolean isCoordinate(double value) {
+        return Double.isFinite(value) && Math.abs(value) <= MAX_COORDINATE;
     }
 
     private void broadcastPresence(long boardId, List<OnlineUser> online) {

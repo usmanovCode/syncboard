@@ -1,7 +1,7 @@
 import { Client, type IMessage } from '@stomp/stompjs'
 import { tokenStorage } from '../api/client'
 import { currentLanguage } from '../i18n'
-import type { ConnectionStatus, JoinPayload, OnlineUser, RemoteOp, SocketError } from './types'
+import type { ConnectionStatus, CursorMessage, JoinPayload, OnlineUser, RemoteOp, SocketError } from './types'
 
 export type BoardSocketHandlers = {
   onStatus: (status: ConnectionStatus) => void
@@ -10,6 +10,7 @@ export type BoardSocketHandlers = {
   onPresence: (online: OnlineUser[]) => void
   /** Accepted ops (ours included), in seq order. */
   onOp: (op: RemoteOp) => void
+  onCursor: (cursor: CursorMessage) => void
   onError: (error: SocketError) => void
   /** The server refused the token (e.g. expired): reconnecting won't help. */
   onUnauthorized: () => void
@@ -55,6 +56,7 @@ export function openBoardSocket(boardId: number, handlers: BoardSocketHandlers):
       // Topics first, then join: ops published after the snapshot can't be missed.
       client.subscribe(topic('presence'), (m) => handlers.onPresence(parse<OnlineUser[]>(m)))
       client.subscribe(topic('ops'), (m) => handlers.onOp(parse<RemoteOp>(m)))
+      client.subscribe(topic('cursors'), (m) => handlers.onCursor(parse<CursorMessage>(m)))
       client.subscribe('/user/queue/errors', (m) => handlers.onError(parse<SocketError>(m)))
       join()
     },

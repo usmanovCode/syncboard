@@ -5,6 +5,7 @@ import { boardsApi, canEdit, type Board } from '../api/boards'
 import { ApiError } from '../api/client'
 import { useAuth } from '../auth/authContext'
 import { CanvasStage } from '../canvas/CanvasStage'
+import { CursorLayer } from '../canvas/CursorLayer'
 import { emptyHistory, record, takeRedo, takeUndo, type LocalHistory } from '../canvas/localHistory'
 import { inverseOf, type BoardOp } from '../canvas/ops'
 import { parseCanvasContent, restyleShape } from '../canvas/shapes'
@@ -283,6 +284,8 @@ function BoardEditor({ board, shapes: initialShapes, version }: Loaded) {
           onAdd={(shape) => perform({ type: 'add', shape })}
           onUpdate={update}
           onRemove={remove}
+          onPointerPosition={room.sendCursor}
+          overlay={<CursorLayer cursors={room.cursors} />}
         />
       </div>
     </div>

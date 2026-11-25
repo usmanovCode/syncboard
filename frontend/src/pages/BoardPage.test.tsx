@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import App from '../App'
 import type { Board, BoardRole, Member } from '../api/boards'
 import { AuthProvider } from '../auth/AuthProvider'
@@ -10,6 +10,7 @@ import type { PendingOp } from '../canvas/sync'
 import type { Shape } from '../canvas/types'
 import { setLanguage } from '../i18n'
 import type { OnlineUser } from '../realtime/types'
+import { CURSOR_SEND_INTERVAL_MS, CURSOR_STALE_MS } from '../realtime/useBoardRoom'
 import { konvaState } from '../test/konvaMock'
 import { socketState } from '../test/socketMock'
 
@@ -592,6 +593,97 @@ describe('BoardPage', () => {
       act(() => socketState.require().onUnauthorized())
 
       expect(await screen.findByRole('heading', { name: 'Sign in' })).toBeInTheDocument()
+    })
+  })
+
+  describe('live cursors', () => {
+    const ali: OnlineUser = { userId: 1, name: 'Ali Valiyev', color: '#e11d48', role: 'OWNER' }
+    const vali: OnlineUser = { userId: 2, name: 'Vali', color: '#2563eb', role: 'VIEWER' }
+    const cursors = () => screen.queryAllByTestId('cursor')
+    const sentCursors = () => socketState.sent.filter((s) => s.path === 'cursor').map((s) => s.body)
+    const cursorAt = (cursorId: string, userId: number, x: number, y: number) =>
+      act(() => socketState.require().onCursor({ cursorId, userId, x, y }))
+
+    beforeEach(() => {
+      vi.useFakeTimers({ shouldAdvanceTime: true })
+    })
+    afterEach(() => {
+      vi.useRealTimers()
+    })
+
+    async function openShared() {
+      fakeBackend()
+      await openBoard({ join: false })
+      act(() => socketState.join({ userId: ali.userId, online: [ali, vali], shapes: [EXISTING], seq: SEQ }))
+    }
+
+    it("shows other people's cursors with their name and color", async () => {
+      await openShared()
+
+      cursorAt('tab-a', vali.userId, 120, 80)
+
+      expect(cursors()).toHaveLength(1)
+      expect(cursors()[0]).toHaveTextContent('Vali')
+      expect(cursors()[0]).toHaveStyle({ transform: 'translate(120px, 80px)' })
+      expect(within(cursors()[0]).getByText('Vali')).toHaveStyle({ backgroundColor: '#2563eb' })
+
+      cursorAt('tab-a', vali.userId, 130, 90)
+      expect(cursors()).toHaveLength(1)
+      expect(cursors()[0]).toHaveStyle({ transform: 'translate(130px, 90px)' })
+    })
+
+    it('shows one cursor per tab, but none for my own other tabs', async () => {
+      await openShared()
+
+      cursorAt('tab-a', vali.userId, 1, 1)
+      cursorAt('tab-b', vali.userId, 2, 2)
+      cursorAt('my-other-tab', ali.userId, 3, 3)
+
+      expect(cursors()).toHaveLength(2)
+    })
+
+    it('removes cursors that leave, go idle, or whose user goes offline', async () => {
+      await openShared()
+      cursorAt('tab-a', vali.userId, 1, 1)
+
+      act(() => socketState.require().onCursor({ cursorId: 'tab-a', userId: vali.userId, gone: true }))
+      expect(cursors()).toHaveLength(0)
+
+      cursorAt('tab-a', vali.userId, 1, 1)
+      await act(() => vi.advanceTimersByTimeAsync(CURSOR_STALE_MS + 1000))
+      expect(cursors()).toHaveLength(0)
+
+      cursorAt('tab-a', vali.userId, 1, 1)
+      act(() => socketState.require().onPresence([ali]))
+      expect(cursors()).toHaveLength(0)
+    })
+
+    it('sends my pointer, throttled, and tells others when it leaves', async () => {
+      await openShared()
+
+      konvaState.pointer = { x: 10.4, y: 20.6 }
+      fireEvent.pointerMove(stage())
+      konvaState.pointer = { x: 11, y: 21 }
+      fireEvent.pointerMove(stage())
+      konvaState.pointer = { x: 12, y: 22 }
+      fireEvent.pointerMove(stage())
+      expect(sentCursors()).toEqual([{ x: 10, y: 21 }]) // rounded; the rest waits for the interval
+
+      await act(() => vi.advanceTimersByTimeAsync(CURSOR_SEND_INTERVAL_MS))
+      expect(sentCursors()).toEqual([{ x: 10, y: 21 }, { x: 12, y: 22 }]) // only the latest
+
+      fireEvent.pointerLeave(stage())
+      expect(sentCursors().at(-1)).toEqual({ gone: true })
+    })
+
+    it('viewers share their cursor too', async () => {
+      fakeBackend({ role: 'VIEWER' })
+      await openBoard()
+
+      konvaState.pointer = { x: 5, y: 6 }
+      fireEvent.pointerMove(stage())
+
+      expect(sentCursors()).toEqual([{ x: 5, y: 6 }])
     })
   })
 })

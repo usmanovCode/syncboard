@@ -12,9 +12,21 @@ import {
   viewOf,
   type SyncState,
 } from '../canvas/sync'
-import type { Shape } from '../canvas/types'
+import type { Point, Shape } from '../canvas/types'
 import { openBoardSocket, type BoardSocket } from './connection'
 import type { ConnectionStatus, OnlineUser } from './types'
+
+/** Send our pointer at most this often (the server drops anything faster than 30 ms). */
+export const CURSOR_SEND_INTERVAL_MS = 50
+/** Hide a cursor that hasn't moved for this long. */
+export const CURSOR_STALE_MS = 5000
+
+/** Another tab's pointer, with the owner's name and color from the online list. */
+export type LiveCursor = { cursorId: string; userId: number; x: number; y: number; name: string; color: string }
+
+type CursorEntry = { userId: number; x: number; y: number; at: number }
+
+const roundPoint = (p: Point) => ({ x: Math.round(p.x), y: Math.round(p.y) })
 
 /**
  * A board's real-time room for as long as the component is mounted: the live drawing (`shapes`),
@@ -37,6 +49,9 @@ export function useBoardRoom(boardId: number, initialShapes: Shape[], initialSeq
   const sync = useRef(syncState)
   const socket = useRef<BoardSocket | null>(null)
   const inFlight = useRef<string | null>(null)
+  const selfId = useRef<number | null>(null)
+  const [cursors, setCursors] = useState<Record<string, CursorEntry>>({})
+  const [now, setNow] = useState(() => Date.now())
   const update = useCallback((next: SyncState) => {
     sync.current = next
     setSyncState(next)
@@ -68,6 +83,7 @@ export function useBoardRoom(boardId: number, initialShapes: Shape[], initialSeq
         setStatus(next)
       },
       onJoined: (payload) => {
+        selfId.current = payload.userId
         setOnline(payload.online)
         const result = receiveSnapshot(sync.current, parseCanvasContent({ shapes: payload.shapes }), payload.seq)
         update(result.state)
@@ -82,6 +98,15 @@ export function useBoardRoom(boardId: number, initialShapes: Shape[], initialSeq
         update(result.state)
         if (result.gap) return s.rejoin()
         settle(remote.clientOpId)
+      },
+      onCursor: (cursor) => {
+        if (cursor.userId === selfId.current) return // my other tabs
+        setCursors((current) => {
+          const next = { ...current }
+          if (cursor.gone || cursor.x === undefined || cursor.y === undefined) delete next[cursor.cursorId]
+          else next[cursor.cursorId] = { userId: cursor.userId, x: cursor.x, y: cursor.y, at: Date.now() }
+          return next
+        })
       },
       onError: (err) => {
         if (!err.clientOpId || !sync.current.pending.some((p) => p.clientOpId === err.clientOpId)) return
@@ -108,6 +133,57 @@ export function useBoardRoom(boardId: number, initialShapes: Shape[], initialSeq
 
   const shapes = useMemo(() => viewOf(syncState), [syncState])
 
+  // Re-evaluate staleness once a second.
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 1000)
+    return () => clearInterval(timer)
+  }, [])
+
+  const liveCursors = useMemo(() => {
+    const byUser = new Map(online.map((u) => [u.userId, u]))
+    return Object.entries(cursors).flatMap(([cursorId, c]): LiveCursor[] => {
+      const user = byUser.get(c.userId)
+      // Gone from the online list (disconnected) or idle: don't show a frozen cursor.
+      if (!user || now - c.at > CURSOR_STALE_MS) return []
+      return [{ cursorId, userId: c.userId, x: c.x, y: c.y, name: user.name, color: user.color }]
+    })
+  }, [cursors, online, now])
+
+  // Pointer updates are throttled: the first goes out at once, then at most one per interval
+  // (always the latest position). "Left the canvas" is sent immediately.
+  const cursorTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const queuedCursor = useRef<Point | null>(null)
+  const lastCursorAt = useRef(0)
+
+  const sendCursor = useCallback((p: Point | null) => {
+    const send = (point: Point | null) => {
+      lastCursorAt.current = Date.now()
+      socket.current?.send('cursor', point ? roundPoint(point) : { gone: true })
+    }
+    if (p === null) {
+      if (cursorTimer.current) clearTimeout(cursorTimer.current)
+      cursorTimer.current = null
+      queuedCursor.current = null
+      send(null)
+      return
+    }
+    const wait = CURSOR_SEND_INTERVAL_MS - (Date.now() - lastCursorAt.current)
+    if (wait <= 0 && !cursorTimer.current) return send(p)
+    queuedCursor.current = p
+    cursorTimer.current ??= setTimeout(() => {
+      cursorTimer.current = null
+      if (queuedCursor.current) send(queuedCursor.current)
+      queuedCursor.current = null
+    }, Math.max(wait, 0))
+  }, [])
+
+  useEffect(
+    () => () => {
+      if (cursorTimer.current) clearTimeout(cursorTimer.current)
+    },
+    [],
+  )
+
   return {
     status,
     online,
@@ -115,6 +191,10 @@ export function useBoardRoom(boardId: number, initialShapes: Shape[], initialSeq
     /** Local changes the server hasn't confirmed yet. */
     pendingCount: syncState.pending.length,
     sendOp,
+    /** Other people's pointers on this board. */
+    cursors: liveCursors,
+    /** Report our pointer (null when it leaves the canvas). */
+    sendCursor,
     /** The last op the server rejected (its change was reverted). */
     error,
     clearError: () => setError(null),

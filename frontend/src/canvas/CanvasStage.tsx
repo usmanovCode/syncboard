@@ -1,5 +1,5 @@
 import type Konva from 'konva'
-import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Ellipse, Layer, Line, Rect, Stage, Text, Transformer } from 'react-konva'
 import { createText, dragShape, isDegenerate, moveShapeTo, newShapeId, startShape, textFontSize } from './shapes'
@@ -16,6 +16,10 @@ type Props = {
   onAdd: (shape: Shape) => void
   onUpdate: (id: string, update: (shape: Shape) => Shape) => void
   onRemove: (id: string) => void
+  /** The pointer position over the canvas (any tool, also read-only); null when it leaves. */
+  onPointerPosition?: (p: Point | null) => void
+  /** Drawn above the canvas, e.g. other people's cursors; must not take pointer events. */
+  overlay?: ReactNode
 }
 
 type KonvaPointerEvent = Konva.KonvaEventObject<PointerEvent>
@@ -60,6 +64,8 @@ export function CanvasStage({
   onAdd,
   onUpdate,
   onRemove,
+  onPointerPosition,
+  overlay,
 }: Props) {
   // Read-only behaves like the select tool with dragging and editing switched off below.
   const tool: Tool = readOnly ? 'select' : activeTool
@@ -139,6 +145,8 @@ export function CanvasStage({
   }
 
   function handlePointerMove(event: KonvaPointerEvent) {
+    const position = pointer()
+    if (position) onPointerPosition?.(position)
     if (erasing.current) {
       eraseAtPointer()
       return
@@ -220,7 +228,10 @@ export function CanvasStage({
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={finishPointer}
-        onPointerLeave={finishPointer}
+        onPointerLeave={() => {
+          finishPointer()
+          onPointerPosition?.(null)
+        }}
       >
         <Layer>
           {shapes.map((shape) => renderShape(shape))}
@@ -228,6 +239,8 @@ export function CanvasStage({
           <Transformer ref={transformerRef} resizeEnabled={false} rotateEnabled={false} borderDash={[4, 4]} />
         </Layer>
       </Stage>
+
+      {overlay}
 
       {textEdit && (
         <textarea

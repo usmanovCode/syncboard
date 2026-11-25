@@ -30,6 +30,30 @@ public final class RealtimeDtos {
     public record OpBroadcast(long seq, long userId, String clientOpId, BoardOp op) {
     }
 
+    /**
+     * Client → {@code /app/boards/{id}/cursor}: pointer position in canvas coordinates, or
+     * {@code gone: true} when it left the canvas (an empty payload would be rejected by Spring).
+     */
+    public record CursorRequest(Double x, Double y, Boolean gone) {
+    }
+
+    /**
+     * Server → {@code /topic/boards/{id}/cursors}. {@code cursorId} is per tab. {@code gone} means the
+     * pointer left the canvas or the tab closed; then x/y are absent. Name and color come from the
+     * online list.
+     */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public record CursorBroadcast(String cursorId, long userId, Double x, Double y, Boolean gone) {
+
+        static CursorBroadcast at(String cursorId, long userId, double x, double y) {
+            return new CursorBroadcast(cursorId, userId, x, y, null);
+        }
+
+        static CursorBroadcast gone(String cursorId, long userId) {
+            return new CursorBroadcast(cursorId, userId, null, null, true);
+        }
+    }
+
     /** Sent to {@code /user/queue/errors} when a message is rejected; {@code clientOpId} if it was an op. */
     @JsonInclude(JsonInclude.Include.NON_NULL)
     public record ErrorMessage(String code, String message, String clientOpId) {

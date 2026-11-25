@@ -25,8 +25,12 @@ public class PresenceRegistry {
     private record Entry(BoardPrincipal user, BoardRole role) {
     }
 
+    /** Cursor updates closer together than this are dropped (clients send at most ~20/s). */
+    static final long MIN_CURSOR_INTERVAL_MS = 30;
+
     /** sessionId -> (boardId -> entry). Joining order is kept for a stable online list. */
     private final Map<String, Map<Long, Entry>> sessions = new LinkedHashMap<>();
+    private final Map<String, Long> lastCursorAt = new HashMap<>();
 
     /** The same user always gets the same color, on every board and in every tab. */
     public static String colorOf(long userId) {
@@ -41,8 +45,33 @@ public class PresenceRegistry {
 
     /** Removes the session everywhere and returns the boards it was on. */
     public synchronized Set<Long> leaveAll(String sessionId) {
+        lastCursorAt.remove(sessionId);
         Map<Long, Entry> boards = sessions.remove(sessionId);
         return boards == null ? Set.of() : Set.copyOf(boards.keySet());
+    }
+
+    /**
+     * Whether a cursor update from this session should be relayed: the session must be on the board
+     * and not sending faster than {@link #MIN_CURSOR_INTERVAL_MS}.
+     */
+    public synchronized boolean acceptCursor(String sessionId, long boardId, long nowMillis) {
+        if (!isJoined(sessionId, boardId)) {
+            return false;
+        }
+        Long last = lastCursorAt.get(sessionId);
+        if (last != null && nowMillis - last < MIN_CURSOR_INTERVAL_MS) {
+            return false;
+        }
+        lastCursorAt.put(sessionId, nowMillis);
+        return true;
+    }
+
+    /**
+     * Identifies one tab's cursor to other clients (a user with two tabs has two cursors). Derived from
+     * the session id so it is stable for the connection, without exposing the id itself.
+     */
+    public static String cursorId(String sessionId) {
+        return Integer.toHexString(sessionId.hashCode());
     }
 
     public synchronized boolean isJoined(String sessionId, long boardId) {

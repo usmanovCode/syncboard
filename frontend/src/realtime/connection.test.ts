@@ -53,6 +53,7 @@ function handlers(): BoardSocketHandlers {
     onJoined: vi.fn(),
     onPresence: vi.fn(),
     onOp: vi.fn(),
+    onCursor: vi.fn(),
     onError: vi.fn(),
     onUnauthorized: vi.fn(),
   }
@@ -95,6 +96,7 @@ describe('openBoardSocket', () => {
     expect([...stomp.instance!.subscriptions.keys()]).toEqual([
       '/topic/boards/7/presence',
       '/topic/boards/7/ops',
+      '/topic/boards/7/cursors',
       '/user/queue/errors',
       '/app/boards/7/join',
     ])
@@ -112,6 +114,10 @@ describe('openBoardSocket', () => {
     const op = { seq: 5, userId: 2, clientOpId: 'x', op: { type: 'remove', id: 's1' } }
     deliver('/topic/boards/7/ops', op)
     expect(h.onOp).toHaveBeenCalledWith(op)
+
+    const cursor = { cursorId: 'c1', userId: 2, x: 1, y: 2 }
+    deliver('/topic/boards/7/cursors', cursor)
+    expect(h.onCursor).toHaveBeenCalledWith(cursor)
   })
 
   it('re-joins on request to get a fresh snapshot', () => {

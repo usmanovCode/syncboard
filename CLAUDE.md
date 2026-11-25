@@ -56,6 +56,12 @@ npm run build                               # tsc -b && vite build
 - **Joining a room:** the client opens one connection per board page (`openBoardSocket`, auto-reconnect). It subscribes to the topics, then to `/app/boards/{id}/join`. That is a `@SubscribeMapping`: a one-off reply with the online list and the drawing snapshot + `seq`, resent on every reconnect.
 - **Presence:** `PresenceRegistry` tracks presence per STOMP session; it is deduplicated per user, and colors are stable per user (`colorOf`). It is dropped on `SessionDisconnectEvent`; heartbeats are 10 s.
 - **Errors:** errors in message handlers go to the sender's `/user/queue/errors` as `{ code, message }`.
+- **Live cursors:**
+  - **Sending:** `SEND /app/boards/{id}/cursor` with `{ x, y }`, or `{ gone: true }` when the pointer leaves (an empty `{}` payload is rejected by Spring). Viewers send cursors too; only being joined is required.
+  - **Relay:** relayed to `/topic/boards/{id}/cursors` as `{ cursorId, userId, x, y | gone }`. `cursorId` is per tab (`PresenceRegistry.cursorId`), and a disconnect broadcasts `gone`.
+  - **Not stored, no errors:** cursors are never persisted. Invalid updates, or updates closer than 30 ms, are dropped silently; `gone` is never rate-limited.
+  - **Client:** `useBoardRoom` throttles sends to 50 ms (always the latest position). It hides a cursor after 5 s without movement or when its user leaves the online list, and skips the user's own other tabs. Names and colors come from the online list. `CursorLayer` draws them in HTML over the Konva stage.
+- **Test timing:** testing-library's `asyncUtilTimeout` is 3 s (`src/test/setup.ts`), because the default 1 s was flaky under full parallel load.
 - **Single instance only:** the broker, presence and board rooms are in memory. Running more than one backend instance needs a shared bus; the plan is **Redis Pub/Sub** for topic fan-out, with room state and presence moved to Redis as well. Until then, do not scale horizontally.
 - **Known limit:** access is checked when subscribing. A member removed while connected keeps receiving until they reconnect, but writes are re-checked on every message.
 - **Tests:** backend tests use a real client (`StompTestClient`, `RANDOM_PORT`). Frontend tests replace the connection with `vi.mock('../realtime/connection', () => import('../test/socketMock'))` and drive the server side through `socketState`.

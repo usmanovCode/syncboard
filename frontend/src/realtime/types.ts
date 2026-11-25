@@ -12,6 +12,12 @@ export type JoinPayload = { boardId: number; userId: number; online: OnlineUser[
 
 export type ConnectionStatus = 'connecting' | 'connected' | 'reconnecting'
 
+/**
+ * Another tab's pointer, in canvas coordinates. `cursorId` is per tab (one user may have several).
+ * `gone`: the pointer left the canvas or the tab closed.
+ */
+export type CursorMessage = { cursorId: string; userId: number; x?: number; y?: number; gone?: boolean }
+
 /** `clientOpId` is set when the rejected message was one of our ops. */
 export type SocketError = { code: string; message: string; clientOpId?: string }
 
