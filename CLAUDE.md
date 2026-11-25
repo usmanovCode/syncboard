@@ -4,6 +4,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 SyncBoard is a monorepo with two independent apps: `backend/` (Spring Boot 3.5, Java 21, Maven, PostgreSQL) and `frontend/` (Vite, React 19, TypeScript, Tailwind CSS v4). The UI and user-facing API error messages exist in English (default) and Korean; code, identifiers and comments are in English. Never hard-code user-facing text: add it to both languages (see **i18n** below).
 
+## Git workflow
+
+Every feature or change goes on its own branch (e.g. `feature/<short-name>`, `fix/<short-name>`) and reaches `main` through a GitHub pull request. Never commit or push directly to `main`. Write PR titles and descriptions in English. After a PR is merged, switch back to `main` and pull.
+
 ## Commands
 
 Backend (run from `backend/`; on Windows PowerShell use `.\mvnw.cmd` instead of `./mvnw`):
