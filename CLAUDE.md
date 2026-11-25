@@ -37,7 +37,9 @@ npm run build                               # tsc -b && vite build
 
 **Auth flow (spans both apps).** `POST /api/auth/register` → `POST /api/auth/login` returns `{ accessToken, tokenType, expiresIn }` → the frontend stores the token in `localStorage` (`syncboard.accessToken`) and sends `Authorization: Bearer …` on every request. Only an access token is issued (no refresh token). Expiry just means the user logs in again.
 
-**Backend** (`com.syncboard`, packaged by feature: `auth`, `user`, `config`, `common`):
+**Boards.** A board is a drawing canvas, not a kanban board. `boards.owner_id` is the creator. Sharing comes later through a `board_members` table: `BoardRepository.findDashboardBoards` is the query to extend so shared boards also appear on the dashboard. Rename and delete stay owner-only (`findByIdAndOwnerId`). Someone else's board returns the same `404 BOARD_NOT_FOUND` as a missing one. `BoardResponse.ownerId` lets the frontend hide owner-only actions (`BoardCard`'s `canManage`). The dashboard is sorted by `updated_at` desc.
+
+**Backend** (`com.syncboard`, packaged by feature: `auth`, `user`, `board`, `config`, `common`):
 - JWT issuing and validation both use Spring's built-in OAuth2 resource server with Nimbus (HS256): `JwtService` signs via the `JwtEncoder` bean, and `SecurityConfig`'s `JwtDecoder` validates incoming requests. There is **no custom auth filter**. To protect a new endpoint, do nothing (everything except register/login is authenticated by default). To get the caller, take `@AuthenticationPrincipal Jwt jwt`; `jwt.getSubject()` is the user id.
 - Emails are normalized (trim + lowercase) in `AuthService` before every lookup and insert. Login returns the same 401 `INVALID_CREDENTIALS` for unknown email and wrong password.
 - Errors: throw `ApiException(status, code, message)`. `GlobalExceptionHandler` turns everything into `ProblemDetail` JSON with extra `code` and, for validation failures, `errors` (field → message). The frontend depends on this shape.

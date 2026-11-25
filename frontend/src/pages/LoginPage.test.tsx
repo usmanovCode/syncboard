@@ -49,12 +49,14 @@ describe('LoginPage', () => {
     expect(localStorage.getItem('syncboard.accessToken')).toBeNull()
   })
 
-  it('stores the token and opens the home page on success', async () => {
+  it('stores the token and opens the dashboard on success', async () => {
     const fetchMock = vi.fn((url: string) =>
       Promise.resolve(
         url === '/api/auth/login'
           ? jsonResponse(200, { accessToken: 'jwt-token', tokenType: 'Bearer', expiresIn: 3600 })
-          : jsonResponse(200, { id: 1, email: 'ali@example.com', fullName: 'Ali Valiyev', createdAt: '' }),
+          : url === '/api/boards'
+            ? jsonResponse(200, [])
+            : jsonResponse(200, { id: 1, email: 'ali@example.com', fullName: 'Ali Valiyev', createdAt: '' }),
       ),
     )
     vi.stubGlobal('fetch', fetchMock)
@@ -64,7 +66,8 @@ describe('LoginPage', () => {
     await userEvent.type(screen.getByLabelText('Parol'), 'password123')
     await userEvent.click(screen.getByRole('button', { name: 'Kirish' }))
 
-    expect(await screen.findByText('Xush kelibsiz, Ali Valiyev!')).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'Doskalarim' })).toBeInTheDocument()
+    expect(screen.getByText('Ali Valiyev')).toBeInTheDocument()
     expect(localStorage.getItem('syncboard.accessToken')).toBe('jwt-token')
     const meCall = fetchMock.mock.calls.find(([url]) => url === '/api/auth/me') as unknown as [string, RequestInit]
     expect((meCall[1].headers as Record<string, string>).Authorization).toBe('Bearer jwt-token')

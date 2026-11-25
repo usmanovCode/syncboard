@@ -30,12 +30,18 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
         return problem;
     }
 
-    /** Safety net for the register race: two requests pass existsByEmail before either inserts. */
+    /**
+     * Constraint violations that slipped past the service checks. The email one is the register race:
+     * two requests pass existsByEmail before either inserts. Anything else is a generic conflict.
+     */
     @ExceptionHandler(DataIntegrityViolationException.class)
     ProblemDetail handleDataIntegrity(DataIntegrityViolationException ex) {
+        String cause = String.valueOf(ex.getMostSpecificCause().getMessage());
+        boolean emailTaken = cause.contains("uk_users_email");
         ProblemDetail problem = ProblemDetail.forStatusAndDetail(
-                HttpStatus.CONFLICT, "Bu email bilan foydalanuvchi allaqachon mavjud");
-        problem.setProperty("code", "EMAIL_TAKEN");
+                HttpStatus.CONFLICT,
+                emailTaken ? "Bu email bilan foydalanuvchi allaqachon mavjud" : "Ma'lumotlar ziddiyati yuz berdi");
+        problem.setProperty("code", emailTaken ? "EMAIL_TAKEN" : "DATA_CONFLICT");
         return problem;
     }
 
