@@ -37,11 +37,22 @@ npm run build                               # tsc -b && vite build
 
 **Auth flow (spans both apps).** `POST /api/auth/register` → `POST /api/auth/login` returns `{ accessToken, tokenType, expiresIn }` → the frontend stores the token in `localStorage` (`syncboard.accessToken`) and sends `Authorization: Bearer …` on every request. Only an access token is issued (no refresh token). Expiry just means the user logs in again.
 
-**Boards.** A board is a drawing canvas, not a kanban board. `boards.owner_id` is the creator. Sharing comes later through a `board_members` table: `BoardRepository.findDashboardBoards` is the query to extend so shared boards also appear on the dashboard. Rename and delete stay owner-only (`findByIdAndOwnerId`). Someone else's board returns the same `404 BOARD_NOT_FOUND` as a missing one. `BoardResponse.ownerId` lets the frontend hide owner-only actions (`BoardCard`'s `canManage`). The dashboard is sorted by `updated_at` desc (saving a canvas bumps it).
+**Boards and sharing.** A board is a drawing canvas, not a kanban board.
+- **Roles:** `boards.owner_id` is the single owner. `board_members` holds the people it is shared with, as `EDITOR` or `VIEWER` (the owner is never stored there). `BoardRole` is `OWNER` / `EDITOR` / `VIEWER`.
+- **Access checks:** all of them go through `BoardAccessService`:
+  - `requireView`: any role;
+  - `requireEdit`: owner or editor, may change the drawing;
+  - `requireOwner`: rename, delete, manage members.
+- **Error codes:** users without access get the same `404 BOARD_NOT_FOUND` as for a missing board. Users who can see the board but lack the role get `403` (`READ_ONLY_BOARD`, `NOT_BOARD_OWNER`).
+- **Sharing:** `/api/boards/{id}/members` invites by the email of an existing account; there are no pending invitations. Any member can list members and remove themselves (leave). Only the owner adds people, changes roles or removes others.
+- **Responses:** `BoardResponse` carries the caller's `role` and `ownerName`.
+  - The dashboard (`findDashboardBoards`) lists owned and shared boards, sorted by `updated_at` desc (saving a canvas bumps it).
+  - The frontend shows owner-only actions only when `role === 'OWNER'`.
+  - Viewers get the canvas in read-only mode (`CanvasStage readOnly`), with no toolbar or shortcuts.
 
 **Canvas (spans both apps, no real-time yet).** The drawing lives in `board_canvases`, one row per board, created together with the board. `content` is JSONB `{ schemaVersion, shapes }`.
 - **Ownership of the format:** the frontend owns it (`src/canvas/types.ts`). The backend only checks the top-level shape and a 2 MB cap.
-- **Saving:** `PUT /api/boards/{id}/canvas { content, version }` replaces the whole document. It is a compare-and-set (`BoardCanvasRepository.saveIfVersionMatches`), and a stale `version` gets `409 CANVAS_CONFLICT`. `BoardService.findAccessible` is the access check to extend for `board_members`.
+- **Saving:** `PUT /api/boards/{id}/canvas { content, version }` replaces the whole document. It is a compare-and-set (`BoardCanvasRepository.saveIfVersionMatches`), and a stale `version` gets `409 CANVAS_CONFLICT`. Writing requires `requireEdit`.
 - **Frontend layout:**
   - `src/canvas/` holds pure logic: `shapes.ts` (drag-to-shape, `parseCanvasContent`, which drops invalid shapes) and `history.ts` (undo/redo reducer over immutable snapshots). It also holds `useCanvasSaver`: 1.5 s debounce, one save in flight, retry every 5 s on errors, stop on 409, flush on unmount.
   - `CanvasStage.tsx` is the only place that touches react-konva.

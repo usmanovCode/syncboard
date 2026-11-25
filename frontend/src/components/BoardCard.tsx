@@ -9,7 +9,7 @@ import { BoardNameForm } from './BoardNameForm'
 
 type Props = {
   board: Board
-  /** Only owners may rename/delete; shared boards (board_members, later) are read-only here. */
+  /** Only the owner may rename/delete; boards shared with the user show who shared them instead. */
   canManage: boolean
   onRename: (name: string) => Promise<void>
   onDelete: () => Promise<void>
@@ -64,6 +64,11 @@ export function BoardCard({ board, canManage, onRename, onDelete }: Props) {
           <p className="mt-1 text-xs text-slate-500">
             {t('dashboard.updated', { date: formatDate(board.updatedAt, currentLanguage()) })}
           </p>
+          {board.role !== 'OWNER' && (
+            <p className="mt-1 truncate text-xs text-indigo-600">
+              {t('dashboard.sharedBy', { name: board.ownerName, role: t(`roles.${board.role}`) })}
+            </p>
+          )}
         </>
       )}
 

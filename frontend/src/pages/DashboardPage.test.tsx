@@ -8,8 +8,16 @@ import { AuthProvider } from '../auth/AuthProvider'
 
 const ME = { id: 1, email: 'ali@example.com', fullName: 'Ali Valiyev', createdAt: '2026-01-01T00:00:00Z' }
 
-function board(id: number, name: string, ownerId = ME.id): Board {
-  return { id, name, ownerId, createdAt: '2026-11-01T10:00:00Z', updatedAt: '2026-11-01T10:00:00Z' }
+function board(id: number, name: string, shared?: { ownerName: string; role: 'EDITOR' | 'VIEWER' }): Board {
+  return {
+    id,
+    name,
+    ownerId: shared ? 99 : ME.id,
+    ownerName: shared?.ownerName ?? ME.fullName,
+    role: shared?.role ?? 'OWNER',
+    createdAt: '2026-11-01T10:00:00Z',
+    updatedAt: '2026-11-01T10:00:00Z',
+  }
 }
 
 function jsonResponse(status: number, body?: unknown) {
@@ -162,11 +170,12 @@ describe('DashboardPage', () => {
     expect(fetchMock).toHaveBeenCalledWith('/api/boards/1', expect.objectContaining({ method: 'DELETE' }))
   })
 
-  it('hides rename and delete on boards the user does not own', async () => {
-    fakeBackend([board(1, 'Ulashilgan doska', 99)])
+  it('shows who shared a board and hides owner-only actions', async () => {
+    fakeBackend([board(1, 'Ulashilgan doska', { ownerName: 'Sobir', role: 'VIEWER' })])
     renderDashboard()
 
     const card = await screen.findByRole('listitem', { name: 'Ulashilgan doska' })
+    expect(within(card).getByText('Shared by Sobir · Viewer')).toBeInTheDocument()
     expect(within(card).queryByRole('button')).toBeNull()
   })
 

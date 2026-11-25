@@ -11,7 +11,7 @@ import { i18n } from '../i18n'
 type LoadState = { status: 'loading' } | { status: 'error'; message: string } | { status: 'ready'; boards: Board[] }
 
 export function DashboardPage() {
-  const { user, logout } = useAuth()
+  const { logout } = useAuth()
   const { t } = useTranslation()
   const [state, setState] = useState<LoadState>({ status: 'loading' })
   const [creating, setCreating] = useState(false)
@@ -129,7 +129,7 @@ export function DashboardPage() {
                   <BoardCard
                     key={board.id}
                     board={board}
-                    canManage={board.ownerId === user?.id}
+                    canManage={board.role === 'OWNER'}
                     onRename={(name) => renameBoard(board.id, name)}
                     onDelete={() => deleteBoard(board.id)}
                   />

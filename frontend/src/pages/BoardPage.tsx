@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useReducer, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Link, useParams } from 'react-router'
-import { boardsApi, type Board } from '../api/boards'
+import { Link, useNavigate, useParams } from 'react-router'
+import { boardsApi, canEdit, type Board } from '../api/boards'
 import { ApiError } from '../api/client'
 import { useAuth } from '../auth/authContext'
 import { CanvasStage } from '../canvas/CanvasStage'
@@ -12,6 +12,7 @@ import { TOOLS } from '../canvas/tools'
 import { DEFAULT_STYLE, type Shape, type ShapeStyle, type Tool } from '../canvas/types'
 import { useCanvasSaver, type SaveStatus } from '../canvas/useCanvasSaver'
 import { LanguageSwitcher } from '../components/LanguageSwitcher'
+import { ShareDialog } from '../components/ShareDialog'
 import { i18n } from '../i18n'
 
 type Loaded = { board: Board; shapes: Shape[]; version: number }
@@ -113,6 +114,11 @@ function isTypingTarget(target: EventTarget | null) {
 
 function BoardEditor({ board, shapes: initialShapes, version, onReload }: Loaded & { onReload: () => void }) {
   const { t } = useTranslation()
+  const { user } = useAuth()
+  const navigate = useNavigate()
+  // Viewers see the drawing but get no tools; the server rejects their writes anyway.
+  const readOnly = !canEdit(board.role)
+  const [sharing, setSharing] = useState(false)
   const [history, dispatch] = useReducer(historyReducer, initialShapes, initHistory)
   const [tool, setToolState] = useState<Tool>('pen')
   const [style, setStyle] = useState<ShapeStyle>(DEFAULT_STYLE)
@@ -131,6 +137,7 @@ function BoardEditor({ board, shapes: initialShapes, version, onReload }: Loaded
   }
 
   useEffect(() => {
+    if (readOnly) return
     function onKeyDown(event: KeyboardEvent) {
       if (isTypingTarget(event.target)) return
       const key = event.key.toLowerCase()
@@ -156,7 +163,7 @@ function BoardEditor({ board, shapes: initialShapes, version, onReload }: Loaded
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [selectedId, setTool])
+  }, [readOnly, selectedId, setTool])
 
   return (
     <div className="flex h-screen flex-col bg-slate-50">
@@ -167,11 +174,32 @@ function BoardEditor({ board, shapes: initialShapes, version, onReload }: Loaded
         <h1 className="min-w-0 flex-1 truncate text-base font-semibold text-slate-900" title={board.name}>
           {board.name}
         </h1>
-        <SaveIndicator status={status} onRetry={retry} onReload={onReload} />
+        {readOnly ? (
+          <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600">
+            {t('board.viewOnly')}
+          </span>
+        ) : (
+          <SaveIndicator status={status} onRetry={retry} onReload={onReload} />
+        )}
+        <button
+          onClick={() => setSharing(true)}
+          className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-100"
+        >
+          {t('share.open')}
+        </button>
         <LanguageSwitcher />
       </header>
+      {sharing && user && (
+        <ShareDialog
+          board={board}
+          currentUserId={user.id}
+          onClose={() => setSharing(false)}
+          onLeft={() => navigate('/', { replace: true })}
+        />
+      )}
       <div className="flex min-h-0 flex-1">
-        <Toolbar
+        {!readOnly && (
+          <Toolbar
           tool={tool}
           style={style}
           canUndo={history.past.length > 0}
@@ -180,9 +208,11 @@ function BoardEditor({ board, shapes: initialShapes, version, onReload }: Loaded
           onStyle={changeStyle}
           onUndo={() => dispatch({ type: 'undo' })}
           onRedo={() => dispatch({ type: 'redo' })}
-        />
+          />
+        )}
         <CanvasStage
           shapes={history.present}
+          readOnly={readOnly}
           tool={tool}
           style={style}
           selectedId={selectedId}

@@ -54,7 +54,7 @@ public class AuthService {
                         HttpStatus.UNAUTHORIZED, "USER_NOT_FOUND", "error.userNotFound"));
     }
 
-    static String normalizeEmail(String email) {
+    public static String normalizeEmail(String email) {
         return email.trim().toLowerCase(Locale.ROOT);
     }
 }

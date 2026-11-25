@@ -7,6 +7,8 @@ import type { Point, Shape, ShapeStyle, Tool } from './types'
 
 type Props = {
   shapes: Shape[]
+  /** Viewers: nothing can be drawn, selected or moved. */
+  readOnly?: boolean
   tool: Tool
   style: ShapeStyle
   selectedId: string | null
@@ -48,7 +50,19 @@ const CURSORS: Record<Tool, string> = {
   eraser: 'cell',
 }
 
-export function CanvasStage({ shapes, tool, style, selectedId, onSelect, onAdd, onUpdate, onRemove }: Props) {
+export function CanvasStage({
+  shapes,
+  readOnly = false,
+  tool: activeTool,
+  style,
+  selectedId,
+  onSelect,
+  onAdd,
+  onUpdate,
+  onRemove,
+}: Props) {
+  // Read-only behaves like the select tool with dragging and editing switched off below.
+  const tool: Tool = readOnly ? 'select' : activeTool
   const { t } = useTranslation()
   const containerRef = useRef<HTMLDivElement>(null)
   const stageRef = useRef<Konva.Stage>(null)
@@ -109,7 +123,7 @@ export function CanvasStage({ shapes, tool, style, selectedId, onSelect, onAdd, 
     }
     switch (tool) {
       case 'select':
-        if (event.target === event.target.getStage()) onSelect(null)
+        if (!readOnly && event.target === event.target.getStage()) onSelect(null)
         return
       case 'eraser':
         erasing.current = true
@@ -152,8 +166,8 @@ export function CanvasStage({ shapes, tool, style, selectedId, onSelect, onAdd, 
       strokeWidth: shape.strokeWidth,
       hitStrokeWidth: Math.max(shape.strokeWidth, MIN_HIT_WIDTH),
       listening: !isDraft,
-      draggable: tool === 'select' && !isDraft,
-      onPointerDown: tool === 'select' ? () => onSelect(shape.id) : undefined,
+      draggable: tool === 'select' && !isDraft && !readOnly,
+      onPointerDown: tool === 'select' && !readOnly ? () => onSelect(shape.id) : undefined,
       onDragEnd: (event: Konva.KonvaEventObject<DragEvent>) =>
         onUpdate(shape.id, (s) => moveShapeTo(s, event.target.x(), event.target.y())),
     }
@@ -180,7 +194,7 @@ export function CanvasStage({ shapes, tool, style, selectedId, onSelect, onAdd, 
             fontFamily="system-ui, sans-serif"
             visible={textEdit?.id !== shape.id}
             onDblClick={() =>
-              tool === 'select' && setTextEdit({ point: { x: shape.x, y: shape.y }, value: shape.text, id: shape.id })
+              tool === 'select' && !readOnly && setTextEdit({ point: { x: shape.x, y: shape.y }, value: shape.text, id: shape.id })
             }
           />
         )

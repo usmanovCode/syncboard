@@ -4,6 +4,7 @@ import { MemoryRouter } from 'react-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import App from '../App'
 import { AuthProvider } from '../auth/AuthProvider'
+import type { Board, BoardRole, Member } from '../api/boards'
 import type { Shape } from '../canvas/types'
 import { SAVE_DEBOUNCE_MS } from '../canvas/useCanvasSaver'
 import { setLanguage } from '../i18n'
@@ -12,7 +13,16 @@ import { konvaState } from '../test/konvaMock'
 vi.mock('react-konva', () => import('../test/konvaMock'))
 
 const ME = { id: 1, email: 'ali@example.com', fullName: 'Ali Valiyev', createdAt: '2026-01-01T00:00:00Z' }
-const BOARD = { id: 7, name: 'Dizayn eskizlari', ownerId: 1, createdAt: '2026-11-01T10:00:00Z', updatedAt: '2026-11-01T10:00:00Z' }
+const BOARD: Board = {
+  id: 7,
+  name: 'Dizayn eskizlari',
+  ownerId: 1,
+  ownerName: ME.fullName,
+  role: 'OWNER',
+  createdAt: '2026-11-01T10:00:00Z',
+  updatedAt: '2026-11-01T10:00:00Z',
+}
+const OWNER_MEMBER: Member = { userId: 1, email: ME.email, fullName: ME.fullName, role: 'OWNER' }
 const EXISTING: Shape = { id: 'r1', type: 'rect', x: 10, y: 10, width: 40, height: 30, stroke: '#1e293b', strokeWidth: 4 }
 
 function jsonResponse(status: number, body?: unknown) {
@@ -25,17 +35,45 @@ function jsonResponse(status: number, body?: unknown) {
 type SavedBody = { content: { schemaVersion: number; shapes: Shape[] }; version: number }
 
 /** Fake backend for one board; records canvas saves. */
-function fakeBackend({ shapes = [EXISTING], getStatus = 200, saveStatus = 200 } = {}) {
+function fakeBackend({
+  shapes = [EXISTING],
+  getStatus = 200,
+  saveStatus = 200,
+  role = 'OWNER' as BoardRole,
+  members = [OWNER_MEMBER],
+} = {}) {
   const saves: SavedBody[] = []
   let version = 3
+  let people = [...members]
+  const board = { ...BOARD, role }
   const fetchMock = vi.fn(async (url: string, init: RequestInit = {}) => {
     const method = init.method ?? 'GET'
     if (url === '/api/auth/me') return jsonResponse(200, ME)
-    if (url === '/api/boards') return jsonResponse(200, [BOARD])
+    if (url === '/api/boards') return jsonResponse(200, [board])
+    if (url === '/api/boards/7/members' && method === 'GET') return jsonResponse(200, people)
+    if (url === '/api/boards/7/members' && method === 'POST') {
+      const { email, role: memberRole } = JSON.parse(init.body as string)
+      if (email !== 'vali@example.com') {
+        return jsonResponse(404, { code: 'MEMBER_USER_NOT_FOUND', detail: 'No SyncBoard account uses this email' })
+      }
+      const member = { userId: 2, email, fullName: 'Vali', role: memberRole }
+      people = [...people, member]
+      return jsonResponse(201, member)
+    }
+    const memberMatch = /^\/api\/boards\/7\/members\/(\d+)$/.exec(url)
+    if (memberMatch && method === 'PATCH') {
+      const { role: memberRole } = JSON.parse(init.body as string)
+      people = people.map((m) => (m.userId === Number(memberMatch[1]) ? { ...m, role: memberRole } : m))
+      return jsonResponse(200, people.find((m) => m.userId === Number(memberMatch[1])))
+    }
+    if (memberMatch && method === 'DELETE') {
+      people = people.filter((m) => m.userId !== Number(memberMatch[1]))
+      return jsonResponse(204)
+    }
     if (url === '/api/boards/7' && method === 'GET') {
       if (getStatus !== 200) return jsonResponse(getStatus, { code: 'BOARD_NOT_FOUND', detail: 'Board not found' })
       return jsonResponse(200, {
-        board: BOARD,
+        board,
         canvas: { content: { schemaVersion: 1, shapes }, version, updatedAt: BOARD.updatedAt },
       })
     }
@@ -289,5 +327,84 @@ describe('BoardPage', () => {
     expect(screen.getByRole('button', { name: '펜 (P)' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '지우개 (E)' })).toBeInTheDocument()
     expect(screen.getByRole('status')).toHaveTextContent('모든 변경 사항이 저장됨')
+  })
+
+  it('gives viewers a read-only canvas', async () => {
+    const { saves } = fakeBackend({ role: 'VIEWER' })
+    await openBoard()
+
+    expect(screen.getByText('View only')).toBeInTheDocument()
+    expect(screen.queryByRole('complementary', { name: 'Drawing tools' })).toBeNull()
+
+    dragOnStage([100, 100], [160, 130])
+    fireEvent.keyDown(window, { key: 'e' })
+    konvaState.hit = 'r1'
+    dragOnStage([10, 10], [20, 20])
+    fireEvent.pointerDown(shapes()[0])
+    fireEvent.keyDown(window, { key: 'Delete' })
+
+    expect(shapes()).toHaveLength(1)
+    await waitForAutosave()
+    expect(saves).toHaveLength(0)
+  })
+
+  it('lets the owner invite, change roles and remove people', async () => {
+    fakeBackend()
+    await openBoard()
+
+    await userEvent.click(screen.getByRole('button', { name: 'Share' }))
+    const dialog = screen.getByRole('dialog', { name: `Share “${BOARD.name}”` })
+    expect(await within(dialog).findByRole('listitem', { name: ME.fullName })).toHaveTextContent('(you)')
+
+    // Unknown account: the server's message is shown.
+    await userEvent.type(within(dialog).getByLabelText('Email'), 'nobody@example.com')
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Invite' }))
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent('No SyncBoard account uses this email')
+
+    await userEvent.clear(within(dialog).getByLabelText('Email'))
+    await userEvent.type(within(dialog).getByLabelText('Email'), 'vali@example.com')
+    await userEvent.selectOptions(within(dialog).getByLabelText('Role'), 'VIEWER')
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Invite' }))
+
+    const vali = await within(dialog).findByRole('listitem', { name: 'Vali' })
+    const roleSelect = within(vali).getByLabelText('Role for Vali')
+    expect(roleSelect).toHaveValue('VIEWER')
+    await userEvent.selectOptions(roleSelect, 'EDITOR')
+    await vi.waitFor(() => expect(within(vali).getByLabelText('Role for Vali')).toHaveValue('EDITOR'))
+
+    await userEvent.click(within(vali).getByRole('button', { name: 'Remove Vali' }))
+    await vi.waitFor(() => expect(within(dialog).queryByRole('listitem', { name: 'Vali' })).toBeNull())
+
+    fireEvent.keyDown(window, { key: 'Escape' })
+    expect(screen.queryByRole('dialog')).toBeNull()
+  })
+
+  it('validates the invite email before calling the API', async () => {
+    const { fetchMock } = fakeBackend()
+    await openBoard()
+
+    await userEvent.click(screen.getByRole('button', { name: 'Share' }))
+    await userEvent.type(screen.getByLabelText('Email'), 'not-an-email')
+    await userEvent.click(screen.getByRole('button', { name: 'Invite' }))
+
+    expect(screen.getByText('Invalid email format')).toBeInTheDocument()
+    expect(fetchMock).not.toHaveBeenCalledWith('/api/boards/7/members', expect.objectContaining({ method: 'POST' }))
+  })
+
+  it('lets a member see who has access and leave the board', async () => {
+    const vali: Member = { userId: 1, email: ME.email, fullName: ME.fullName, role: 'EDITOR' }
+    const owner: Member = { userId: 9, email: 'sobir@example.com', fullName: 'Sobir', role: 'OWNER' }
+    fakeBackend({ role: 'EDITOR', members: [owner, vali] })
+    await openBoard()
+
+    await userEvent.click(screen.getByRole('button', { name: 'Share' }))
+    const dialog = screen.getByRole('dialog')
+    expect(await within(dialog).findByRole('listitem', { name: 'Sobir' })).toHaveTextContent('Owner')
+    expect(within(dialog).queryByLabelText('Email')).toBeNull()
+    expect(within(dialog).queryByRole('combobox')).toBeNull()
+
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Leave board' }))
+
+    expect(await screen.findByRole('heading', { name: 'My boards' })).toBeInTheDocument()
   })
 })
