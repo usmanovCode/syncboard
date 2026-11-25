@@ -76,6 +76,7 @@ describe('DashboardPage', () => {
 
     expect(await screen.findByRole('heading', { name: 'Dizayn eskizlari' })).toBeInTheDocument()
     expect(boardTitles()).toEqual(['Dizayn eskizlari', 'Dars rejasi'])
+    expect(within(screen.getByRole('listitem', { name: 'Dars rejasi' })).getByText(/Nov 1, 2026/)).toBeInTheDocument()
   })
 
   it('shows an empty state when there are no boards', async () => {

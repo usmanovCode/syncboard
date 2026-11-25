@@ -13,7 +13,8 @@ type Props = {
 
 type Mode = 'view' | 'rename' | 'confirmDelete'
 
-const dateFormat = new Intl.DateTimeFormat('uz-UZ', { day: 'numeric', month: 'short', year: 'numeric' })
+// "Nov 25, 2026"
+const dateFormat = new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
 
 export function BoardCard({ board, canManage, onRename, onDelete }: Props) {
   const [mode, setMode] = useState<Mode>('view')
