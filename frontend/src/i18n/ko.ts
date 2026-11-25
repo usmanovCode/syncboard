@@ -74,6 +74,14 @@ export const ko: Translations<typeof en> = {
     deleteYes: '삭제',
     deleting: '삭제 중…',
   },
+  presence: {
+    label: '현재 접속 중',
+    you: '나',
+    item: '{{name}} · {{role}}',
+    more: '+{{count}}',
+    connecting: '연결 중…',
+    reconnecting: '연결이 끊어졌습니다. 다시 연결하는 중…',
+  },
   share: {
     open: '공유',
     title: '“{{name}}” 공유',

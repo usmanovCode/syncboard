@@ -50,6 +50,16 @@ npm run build                               # tsc -b && vite build
   - The frontend shows owner-only actions only when `role === 'OWNER'`.
   - Viewers get the canvas in read-only mode (`CanvasStage readOnly`), with no toolbar or shortcuts.
 
+**Real-time (spans both apps, `com.syncboard.realtime`, `src/realtime/`).** STOMP over plain WebSocket at `/ws`; in dev, Vite proxies `/ws` like `/api`.
+- **Authentication:** the HTTP chain permits the handshake. `StompAuthInterceptor` authenticates `CONNECT` (`Authorization: Bearer …` STOMP header, plus `accept-language` for error texts) and sets a `BoardPrincipal` (name = user id).
+- **Authorization:** `SUBSCRIBE` is only allowed to a board's `/topic/boards/{id}/(ops|presence|cursors)` and `/app/boards/{id}/join` (needs `requireView`), and to `/user/queue/errors`. `SEND` is only allowed to `/app/**`; clients must never publish to broker topics. Violations get a STOMP ERROR frame.
+- **Joining a room:** the client opens one connection per board page (`openBoardSocket`, auto-reconnect). It subscribes, then subscribes to `/app/boards/{id}/join`. That is a `@SubscribeMapping`: a one-off reply with the room state, resent on every reconnect.
+- **Presence:** `PresenceRegistry` tracks presence per STOMP session; it is deduplicated per user, and colors are stable per user (`colorOf`). It is dropped on `SessionDisconnectEvent`; heartbeats are 10 s.
+- **Errors:** errors in message handlers go to the sender's `/user/queue/errors` as `{ code, message }`.
+- **Single instance only:** the broker and room state are in memory. Running more than one backend instance needs a shared bus; the plan is **Redis Pub/Sub** for topic fan-out, with room state and presence moved to Redis as well. Until then, do not scale horizontally.
+- **Known limit:** access is checked when subscribing. A member removed while connected keeps receiving until they reconnect, but writes are re-checked on every message.
+- **Tests:** backend tests use a real client (`StompTestClient`, `RANDOM_PORT`). Frontend tests replace the connection with `vi.mock('../realtime/connection', () => import('../test/socketMock'))` and drive the server side through `socketState`.
+
 **Canvas (spans both apps, no real-time yet).** The drawing lives in `board_canvases`, one row per board, created together with the board. `content` is JSONB `{ schemaVersion, shapes }`.
 - **Ownership of the format:** the frontend owns it (`src/canvas/types.ts`). The backend only checks the top-level shape and a 2 MB cap.
 - **Saving:** `PUT /api/boards/{id}/canvas { content, version }` replaces the whole document. It is a compare-and-set (`BoardCanvasRepository.saveIfVersionMatches`), and a stale `version` gets `409 CANVAS_CONFLICT`. Writing requires `requireEdit`.

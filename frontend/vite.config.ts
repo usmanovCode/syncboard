@@ -10,6 +10,8 @@ export default defineConfig({
     // The frontend always calls relative /api/... URLs; in dev they are forwarded to Spring Boot.
     proxy: {
       '/api': 'http://localhost:8080',
+      // Board real-time channel (STOMP over WebSocket).
+      '/ws': { target: 'ws://localhost:8080', ws: true },
     },
   },
   test: {

@@ -12,8 +12,10 @@ import { TOOLS } from '../canvas/tools'
 import { DEFAULT_STYLE, type Shape, type ShapeStyle, type Tool } from '../canvas/types'
 import { useCanvasSaver, type SaveStatus } from '../canvas/useCanvasSaver'
 import { LanguageSwitcher } from '../components/LanguageSwitcher'
+import { PresenceBar } from '../components/PresenceBar'
 import { ShareDialog } from '../components/ShareDialog'
 import { i18n } from '../i18n'
+import { useBoardRoom } from '../realtime/useBoardRoom'
 
 type Loaded = { board: Board; shapes: Shape[]; version: number }
 type LoadState =
@@ -119,6 +121,7 @@ function BoardEditor({ board, shapes: initialShapes, version, onReload }: Loaded
   // Viewers see the drawing but get no tools; the server rejects their writes anyway.
   const readOnly = !canEdit(board.role)
   const [sharing, setSharing] = useState(false)
+  const room = useBoardRoom(board.id)
   const [history, dispatch] = useReducer(historyReducer, initialShapes, initHistory)
   const [tool, setToolState] = useState<Tool>('pen')
   const [style, setStyle] = useState<ShapeStyle>(DEFAULT_STYLE)
@@ -174,6 +177,7 @@ function BoardEditor({ board, shapes: initialShapes, version, onReload }: Loaded
         <h1 className="min-w-0 flex-1 truncate text-base font-semibold text-slate-900" title={board.name}>
           {board.name}
         </h1>
+        <PresenceBar online={room.online} selfId={user?.id} status={room.status} />
         {readOnly ? (
           <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600">
             {t('board.viewOnly')}

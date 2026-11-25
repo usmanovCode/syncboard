@@ -9,8 +9,11 @@ import type { Shape } from '../canvas/types'
 import { SAVE_DEBOUNCE_MS } from '../canvas/useCanvasSaver'
 import { setLanguage } from '../i18n'
 import { konvaState } from '../test/konvaMock'
+import { socketState } from '../test/socketMock'
+import type { OnlineUser } from '../realtime/types'
 
 vi.mock('react-konva', () => import('../test/konvaMock'))
+vi.mock('../realtime/connection', () => import('../test/socketMock'))
 
 const ME = { id: 1, email: 'ali@example.com', fullName: 'Ali Valiyev', createdAt: '2026-01-01T00:00:00Z' }
 const BOARD: Board = {
@@ -126,6 +129,7 @@ describe('BoardPage', () => {
   beforeEach(() => {
     localStorage.setItem('syncboard.accessToken', 'jwt-token')
     konvaState.reset()
+    socketState.reset()
     vi.useFakeTimers({ shouldAdvanceTime: true })
   })
   afterEach(() => {
@@ -406,5 +410,71 @@ describe('BoardPage', () => {
     await userEvent.click(within(dialog).getByRole('button', { name: 'Leave board' }))
 
     expect(await screen.findByRole('heading', { name: 'My boards' })).toBeInTheDocument()
+  })
+
+  describe('presence', () => {
+    const ali: OnlineUser = { userId: 1, name: 'Ali Valiyev', color: '#e11d48', role: 'OWNER' }
+    const vali: OnlineUser = { userId: 2, name: 'Vali', color: '#2563eb', role: 'VIEWER' }
+    const onlineList = () => screen.getByRole('list', { name: 'Online now' })
+
+    it('joins the board room and lists who is online, me first', async () => {
+      fakeBackend()
+      await openBoard()
+      expect(socketState.boardId).toBe(7)
+      expect(screen.getByText('Connecting…')).toBeInTheDocument()
+
+      act(() => socketState.join({ online: [vali, ali] }))
+
+      const items = within(onlineList()).getAllByRole('listitem')
+      expect(items.map((i) => i.getAttribute('aria-label'))).toEqual(['Ali Valiyev (you) · Owner', 'Vali · Viewer'])
+      expect(items[0]).toHaveTextContent('AV')
+      expect(items[1]).toHaveStyle({ backgroundColor: '#2563eb' })
+
+      act(() => socketState.require().onPresence([ali]))
+      expect(within(onlineList()).getAllByRole('listitem')).toHaveLength(1)
+    })
+
+    it('collapses long lists', async () => {
+      fakeBackend()
+      await openBoard()
+      const many = Array.from({ length: 8 }, (_, i): OnlineUser => ({ ...vali, userId: 10 + i, name: `User ${i}` }))
+
+      act(() => socketState.join({ online: [ali, ...many] }))
+
+      const items = within(onlineList()).getAllByRole('listitem')
+      expect(items).toHaveLength(6)
+      expect(items[5]).toHaveTextContent('+4')
+    })
+
+    it('shows when the connection drops and recovers', async () => {
+      fakeBackend()
+      await openBoard()
+      act(() => socketState.join({ online: [ali] }))
+
+      act(() => socketState.require().onStatus('reconnecting'))
+      expect(screen.getByText('Connection lost. Reconnecting…')).toBeInTheDocument()
+
+      act(() => socketState.join({ online: [ali, vali] }))
+      expect(within(onlineList()).getAllByRole('listitem')).toHaveLength(2)
+    })
+
+    it('leaves the room when the page closes', async () => {
+      fakeBackend()
+      await openBoard()
+
+      await userEvent.click(screen.getByRole('link', { name: /Back to boards/ }))
+
+      expect(await screen.findByRole('heading', { name: 'My boards' })).toBeInTheDocument()
+      expect(socketState.closed).toBe(true)
+    })
+
+    it('logs out when the socket rejects the token', async () => {
+      fakeBackend()
+      await openBoard()
+
+      act(() => socketState.require().onUnauthorized())
+
+      expect(await screen.findByRole('heading', { name: 'Sign in' })).toBeInTheDocument()
+    })
   })
 })

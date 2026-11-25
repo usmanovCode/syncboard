@@ -70,6 +70,14 @@ export const en = {
     deleteYes: 'Yes, delete',
     deleting: 'Deleting…',
   },
+  presence: {
+    label: 'Online now',
+    you: 'you',
+    item: '{{name}} · {{role}}',
+    more: '+{{count}}',
+    connecting: 'Connecting…',
+    reconnecting: 'Connection lost. Reconnecting…',
+  },
   share: {
     open: 'Share',
     title: 'Share “{{name}}”',

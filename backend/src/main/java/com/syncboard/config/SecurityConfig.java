@@ -43,6 +43,9 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(HttpMethod.POST, "/api/auth/register", "/api/auth/login").permitAll()
                         .requestMatchers("/error").permitAll()
+                        // Browsers can't send a token on the WebSocket handshake; STOMP CONNECT is
+                        // authenticated by StompAuthInterceptor instead.
+                        .requestMatchers("/ws").permitAll()
                         .anyRequest().authenticated())
                 .oauth2ResourceServer(oauth -> oauth.jwt(Customizer.withDefaults()))
                 .build();

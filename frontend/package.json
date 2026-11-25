@@ -12,6 +12,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@stomp/stompjs": "^7.5.0",
     "i18next": "^27.2.8",
     "konva": "^10.11.0",
     "react": "^19.3.1",
