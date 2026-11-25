@@ -37,7 +37,17 @@ npm run build                               # tsc -b && vite build
 
 **Auth flow (spans both apps).** `POST /api/auth/register` → `POST /api/auth/login` returns `{ accessToken, tokenType, expiresIn }` → the frontend stores the token in `localStorage` (`syncboard.accessToken`) and sends `Authorization: Bearer …` on every request. Only an access token is issued (no refresh token). Expiry just means the user logs in again.
 
-**Boards.** A board is a drawing canvas, not a kanban board. `boards.owner_id` is the creator. Sharing comes later through a `board_members` table: `BoardRepository.findDashboardBoards` is the query to extend so shared boards also appear on the dashboard. Rename and delete stay owner-only (`findByIdAndOwnerId`). Someone else's board returns the same `404 BOARD_NOT_FOUND` as a missing one. `BoardResponse.ownerId` lets the frontend hide owner-only actions (`BoardCard`'s `canManage`). The dashboard is sorted by `updated_at` desc.
+**Boards.** A board is a drawing canvas, not a kanban board. `boards.owner_id` is the creator. Sharing comes later through a `board_members` table: `BoardRepository.findDashboardBoards` is the query to extend so shared boards also appear on the dashboard. Rename and delete stay owner-only (`findByIdAndOwnerId`). Someone else's board returns the same `404 BOARD_NOT_FOUND` as a missing one. `BoardResponse.ownerId` lets the frontend hide owner-only actions (`BoardCard`'s `canManage`). The dashboard is sorted by `updated_at` desc (saving a canvas bumps it).
+
+**Canvas (spans both apps, no real-time yet).** The drawing lives in `board_canvases`, one row per board, created together with the board. `content` is JSONB `{ schemaVersion, shapes }`.
+- **Ownership of the format:** the frontend owns it (`src/canvas/types.ts`). The backend only checks the top-level shape and a 2 MB cap.
+- **Saving:** `PUT /api/boards/{id}/canvas { content, version }` replaces the whole document. It is a compare-and-set (`BoardCanvasRepository.saveIfVersionMatches`), and a stale `version` gets `409 CANVAS_CONFLICT`. `BoardService.findAccessible` is the access check to extend for `board_members`.
+- **Frontend layout:**
+  - `src/canvas/` holds pure logic: `shapes.ts` (drag-to-shape, `parseCanvasContent`, which drops invalid shapes) and `history.ts` (undo/redo reducer over immutable snapshots). It also holds `useCanvasSaver`: 1.5 s debounce, one save in flight, retry every 5 s on errors, stop on 409, flush on unmount.
+  - `CanvasStage.tsx` is the only place that touches react-konva.
+  - `BoardPage` is lazy-loaded so Konva stays out of the main bundle.
+- **Shape model:** every shape has `x`/`y`, so moving is just a position change. Pen and line `points` are relative to it. The eraser removes whole shapes, using Konva hit testing.
+- **Tests:** jsdom has no canvas. Page tests use `vi.mock('react-konva', () => import('../test/konvaMock'))` and steer the pointer through `konvaState`.
 
 **i18n (spans both apps).** Supported languages are `en` (default) and `ko`.
 - Frontend: `i18next` + `react-i18next`, initialized in `src/i18n/index.ts`, which `main.tsx` and the test setup import. `src/i18n/en.ts` defines the keys. `ko.ts` must have the same shape, and `i18next.d.ts` type-checks every `t('...')` key, so `tsc` fails on missing or unknown keys. The language is the stored choice (`localStorage` `syncboard.lang`), else `ko` for Korean browsers, else `en`. `LanguageSwitcher` sits in the app header and on the auth pages. Format dates with `i18n/format.ts` (`Nov 25, 2026` / `2026년 11월 25일`), not ad-hoc `Intl` calls.

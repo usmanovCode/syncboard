@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { Link } from 'react-router'
 import type { Board } from '../api/boards'
 import { ApiError } from '../api/client'
 import { currentLanguage } from '../i18n'
@@ -36,7 +37,7 @@ export function BoardCard({ board, canManage, onRename, onDelete }: Props) {
   return (
     <li
       aria-label={board.name}
-      className="flex min-h-40 flex-col rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition hover:shadow-md"
+      className="relative flex min-h-40 flex-col rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition hover:shadow-md"
     >
       {mode === 'rename' ? (
         <BoardNameForm
@@ -52,7 +53,13 @@ export function BoardCard({ board, canManage, onRename, onDelete }: Props) {
       ) : (
         <>
           <h2 className="truncate text-base font-semibold text-slate-900" title={board.name}>
-            {board.name}
+            {/* Stretched link: the whole card opens the board; the buttons below sit above it (z-10). */}
+            <Link
+              to={`/boards/${board.id}`}
+              className="after:absolute after:inset-0 after:rounded-2xl hover:text-indigo-600 focus-visible:outline-none focus-visible:after:ring-2 focus-visible:after:ring-indigo-500"
+            >
+              {board.name}
+            </Link>
           </h2>
           <p className="mt-1 text-xs text-slate-500">
             {t('dashboard.updated', { date: formatDate(board.updatedAt, currentLanguage()) })}
@@ -61,7 +68,7 @@ export function BoardCard({ board, canManage, onRename, onDelete }: Props) {
       )}
 
       {canManage && mode === 'view' && (
-        <div className="mt-auto flex gap-2 pt-4">
+        <div className="relative z-10 mt-auto flex gap-2 pt-4">
           <button
             onClick={() => setMode('rename')}
             className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-100"
@@ -81,7 +88,7 @@ export function BoardCard({ board, canManage, onRename, onDelete }: Props) {
       )}
 
       {mode === 'confirmDelete' && (
-        <div className="mt-auto pt-4" role="group" aria-label={t('dashboard.deleteConfirmLabel')}>
+        <div className="relative z-10 mt-auto pt-4" role="group" aria-label={t('dashboard.deleteConfirmLabel')}>
           <p className="text-sm text-slate-700">{t('dashboard.deleteConfirm')}</p>
           {deleteError && <p className="mt-1 text-xs text-red-600">{deleteError}</p>}
           <div className="mt-2 flex gap-2">
