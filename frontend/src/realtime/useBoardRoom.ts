@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { chatApi } from '../api/boards'
 import { useAuth } from '../auth/authContext'
 import type { BoardOp } from '../canvas/ops'
 import { newShapeId, parseCanvasContent } from '../canvas/shapes'
@@ -13,6 +14,20 @@ import {
   type SyncState,
 } from '../canvas/sync'
 import type { Point, Shape } from '../canvas/types'
+import {
+  addPendingMessage,
+  discardPendingMessage,
+  initChat,
+  markRead,
+  nextToSend,
+  prependOlder,
+  receiveChatMessage,
+  receiveChatSnapshot,
+  rejectPendingMessage,
+  retryPendingMessage,
+  unreadCount,
+  type ChatState,
+} from '../chat/chatState'
 import { openBoardSocket, type BoardSocket } from './connection'
 import type { ConnectionStatus, OnlineUser } from './types'
 
@@ -20,6 +35,10 @@ import type { ConnectionStatus, OnlineUser } from './types'
 export const CURSOR_SEND_INTERVAL_MS = 50
 /** Hide a cursor that hasn't moved for this long. */
 export const CURSOR_STALE_MS = 5000
+/** While typing, repeat "typing" this often (the server drops repeats closer than 1 s). */
+export const TYPING_REPEAT_MS = 3000
+/** Hide someone's "typing…" when it hasn't been repeated for this long. */
+export const TYPING_STALE_MS = 5000
 
 /** Another tab's pointer, with the owner's name and color from the online list. */
 export type LiveCursor = { cursorId: string; userId: number; x: number; y: number; name: string; color: string }
@@ -41,7 +60,7 @@ const roundPoint = (p: Point) => ({ x: Math.round(p.x), y: Math.round(p.y) })
  * re-send pending ops right after a join), and React state, set from the ref, for rendering.
  */
 export function useBoardRoom(boardId: number, initialShapes: Shape[], initialSeq: number) {
-  const { logout } = useAuth()
+  const { logout, user } = useAuth()
   const [status, setStatus] = useState<ConnectionStatus>('connecting')
   const [online, setOnline] = useState<OnlineUser[]>([])
   const [error, setError] = useState<string | null>(null)
@@ -51,11 +70,41 @@ export function useBoardRoom(boardId: number, initialShapes: Shape[], initialSeq
   const inFlight = useRef<string | null>(null)
   const selfId = useRef<number | null>(null)
   const [cursors, setCursors] = useState<Record<string, CursorEntry>>({})
+  const [chatState, setChatState] = useState<ChatState>(initChat)
+  const chat = useRef(chatState)
+  const chatInFlight = useRef<string | null>(null)
+  /** Joined and still connected: messages written meanwhile wait for the next join. */
+  const chatLive = useRef(false)
+  /** userId -> when their last "typing" arrived. */
+  const [typing, setTyping] = useState<Record<number, number>>({})
+  const typingSentAt = useRef<number | null>(null)
   const [now, setNow] = useState(() => Date.now())
   const update = useCallback((next: SyncState) => {
     sync.current = next
     setSyncState(next)
   }, [])
+
+  const updateChat = useCallback((next: ChatState) => {
+    chat.current = next
+    setChatState(next)
+  }, [])
+
+  // Chat messages also go one at a time, so a tab's messages are stored in the order they were written.
+  const pumpChat = useCallback(() => {
+    const next = nextToSend(chat.current)
+    if (!chatLive.current || chatInFlight.current || !next || !socket.current) return
+    chatInFlight.current = next.clientMessageId
+    socket.current.send('chat', { clientMessageId: next.clientMessageId, text: next.text })
+  }, [])
+
+  const settleChat = useCallback(
+    (clientMessageId: string) => {
+      if (chatInFlight.current !== clientMessageId) return
+      chatInFlight.current = null
+      pumpChat()
+    },
+    [pumpChat],
+  )
 
   const pump = useCallback(() => {
     const { joined, pending } = sync.current
@@ -78,6 +127,9 @@ export function useBoardRoom(boardId: number, initialShapes: Shape[], initialSeq
       onStatus: (next) => {
         if (next !== 'connected') {
           inFlight.current = null // re-sent after the next join
+          chatInFlight.current = null
+          chatLive.current = false
+          typingSentAt.current = null // the server ends our "typing" when we disconnect
           update(disconnected(sync.current))
         }
         setStatus(next)
@@ -91,6 +143,10 @@ export function useBoardRoom(boardId: number, initialShapes: Shape[], initialSeq
         // Ops made while offline (or unconfirmed when the connection dropped) go out again, in order.
         inFlight.current = null
         pump()
+        updateChat(receiveChatSnapshot(chat.current, payload.chat, payload.userId))
+        chatInFlight.current = null
+        chatLive.current = true
+        pumpChat()
       },
       onPresence: setOnline,
       onOp: (remote) => {
@@ -108,7 +164,32 @@ export function useBoardRoom(boardId: number, initialShapes: Shape[], initialSeq
           return next
         })
       },
+      onChat: (message) => {
+        updateChat(receiveChatMessage(chat.current, message, selfId.current ?? 0))
+        setTyping((current) => {
+          if (!(message.userId in current)) return current
+          const next = { ...current }
+          delete next[message.userId]
+          return next
+        })
+        if (message.userId === selfId.current) settleChat(message.clientMessageId)
+      },
+      onTyping: ({ userId, typing: active }) => {
+        if (userId === selfId.current) return // my other tabs
+        setTyping((current) => {
+          const next = { ...current }
+          if (active) next[userId] = Date.now()
+          else delete next[userId]
+          return next
+        })
+      },
       onError: (err) => {
+        if (err.clientMessageId) {
+          if (!chat.current.pending.some((p) => p.clientMessageId === err.clientMessageId)) return
+          updateChat(rejectPendingMessage(chat.current, err.clientMessageId, err.message))
+          settleChat(err.clientMessageId)
+          return
+        }
         if (!err.clientOpId || !sync.current.pending.some((p) => p.clientOpId === err.clientOpId)) return
         update(rejectPending(sync.current, err.clientOpId))
         setError(err.message)
@@ -121,7 +202,7 @@ export function useBoardRoom(boardId: number, initialShapes: Shape[], initialSeq
       socket.current = null
       s.close()
     }
-  }, [boardId, logout, update, pump, settle])
+  }, [boardId, logout, update, pump, settle, updateChat, pumpChat, settleChat])
 
   const sendOp = useCallback(
     (op: BoardOp) => {
@@ -184,6 +265,59 @@ export function useBoardRoom(boardId: number, initialShapes: Shape[], initialSeq
     [],
   )
 
+  /** Queues a message (shown at once as pending); it goes out when connected. */
+  const sendMessage = useCallback(
+    (text: string) => {
+      const trimmed = text.trim()
+      if (!trimmed) return
+      updateChat(addPendingMessage(chat.current, newShapeId(), trimmed))
+      typingSentAt.current = null // the server ends "typing" when the message arrives
+      pumpChat()
+    },
+    [updateChat, pumpChat],
+  )
+
+  const retryMessage = useCallback(
+    (clientMessageId: string) => {
+      updateChat(retryPendingMessage(chat.current, clientMessageId))
+      pumpChat()
+    },
+    [updateChat, pumpChat],
+  )
+
+  const discardMessage = useCallback(
+    (clientMessageId: string) => updateChat(discardPendingMessage(chat.current, clientMessageId)),
+    [updateChat],
+  )
+
+  /** Loads the page before the oldest message we have. Rejects on failure (the caller shows it). */
+  const loadOlderMessages = useCallback(async () => {
+    const oldest = chat.current.messages[0]
+    if (!oldest) return
+    const page = await chatApi.history(boardId, oldest.id)
+    updateChat(prependOlder(chat.current, page))
+  }, [boardId, updateChat])
+
+  const markChatRead = useCallback(() => updateChat(markRead(chat.current)), [updateChat])
+
+  /** Whether the user is typing a message right now; repeated while true, sent once when it stops. */
+  const reportTyping = useCallback((active: boolean) => {
+    const now = Date.now()
+    if (active) {
+      if (typingSentAt.current !== null && now - typingSentAt.current < TYPING_REPEAT_MS) return
+      typingSentAt.current = now
+      socket.current?.send('typing', { typing: true })
+    } else if (typingSentAt.current !== null) {
+      typingSentAt.current = null
+      socket.current?.send('typing', { typing: false })
+    }
+  }, [])
+
+  const typingUsers = useMemo(
+    () => online.filter((u) => u.userId in typing && now - typing[u.userId] <= TYPING_STALE_MS),
+    [online, typing, now],
+  )
+
   return {
     status,
     online,
@@ -198,5 +332,19 @@ export function useBoardRoom(boardId: number, initialShapes: Shape[], initialSeq
     /** The last op the server rejected (its change was reverted). */
     error,
     clearError: () => setError(null),
+    chat: {
+      messages: chatState.messages,
+      pending: chatState.pending,
+      hasMore: chatState.hasMore,
+      unread: unreadCount(chatState, user?.id ?? null),
+      /** Online users currently typing (never me). */
+      typingUsers,
+      send: sendMessage,
+      retry: retryMessage,
+      discard: discardMessage,
+      loadOlder: loadOlderMessages,
+      markRead: markChatRead,
+      reportTyping,
+    },
   }
 }

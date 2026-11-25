@@ -32,6 +32,26 @@ class PresenceRegistryTest {
     }
 
     @Test
+    void typingIsRateLimitedPerSessionUntilItStops() {
+        presence.join("s1", 7, ali, BoardRole.OWNER);
+
+        assertThat(presence.acceptTyping("s1", 7, 1_000)).isTrue();
+        assertThat(presence.acceptTyping("s1", 7, 1_500)).isFalse();
+        assertThat(presence.acceptTyping("s1", 7, 1_000 + PresenceRegistry.MIN_TYPING_INTERVAL_MS)).isTrue();
+
+        presence.stopTyping("s1");
+        assertThat(presence.acceptTyping("s1", 7, 2_100)).isTrue(); // a new burst starts at once
+    }
+
+    @Test
+    void typingNeedsAJoinedSession() {
+        assertThat(presence.acceptTyping("s1", 7, 1_000)).isFalse();
+
+        presence.join("s1", 7, ali, BoardRole.OWNER);
+        assertThat(presence.acceptTyping("s1", 8, 1_000)).isFalse();
+    }
+
+    @Test
     void colorsAndCursorIdsAreStable() {
         assertThat(PresenceRegistry.colorOf(42)).isEqualTo(PresenceRegistry.colorOf(42));
         assertThat(PresenceRegistry.COLORS).contains(PresenceRegistry.colorOf(42));

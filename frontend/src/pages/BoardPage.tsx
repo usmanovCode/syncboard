@@ -12,6 +12,7 @@ import { parseCanvasContent, restyleShape } from '../canvas/shapes'
 import { Toolbar } from '../canvas/Toolbar'
 import { TOOLS } from '../canvas/tools'
 import { DEFAULT_STYLE, type Shape, type ShapeStyle, type Tool } from '../canvas/types'
+import { ChatPanel } from '../components/ChatPanel'
 import { LanguageSwitcher } from '../components/LanguageSwitcher'
 import { PresenceBar } from '../components/PresenceBar'
 import { ShareDialog } from '../components/ShareDialog'
@@ -104,6 +105,9 @@ export function BoardPage() {
   )
 }
 
+/** Whether the chat panel is open (it is by default), remembered across boards and visits. */
+const CHAT_OPEN_KEY = 'syncboard.chatOpen'
+
 const TOOL_BY_KEY = new Map(TOOLS.map(({ tool, key }) => [key.toLowerCase(), tool]))
 
 function isTypingTarget(target: EventTarget | null) {
@@ -123,6 +127,17 @@ function BoardEditor({ board, shapes: initialShapes, version }: Loaded) {
   const [tool, setToolState] = useState<Tool>('pen')
   const [style, setStyle] = useState<ShapeStyle>(DEFAULT_STYLE)
   const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [chatOpen, setChatOpenState] = useState(() => localStorage.getItem(CHAT_OPEN_KEY) !== 'false')
+  const setChatOpen = (open: boolean) => {
+    setChatOpenState(open)
+    localStorage.setItem(CHAT_OPEN_KEY, String(open))
+  }
+  const { markRead } = room.chat
+  const latestMessageId = room.chat.messages.at(-1)?.id
+  // Messages count as read while the panel is open.
+  useEffect(() => {
+    if (chatOpen) markRead()
+  }, [chatOpen, latestMessageId, markRead])
 
   const setTool = useCallback((next: Tool) => {
     setToolState(next)
@@ -238,6 +253,21 @@ function BoardEditor({ board, shapes: initialShapes, version }: Loaded) {
           <SyncIndicator status={syncStatus} />
         )}
         <button
+          onClick={() => setChatOpen(!chatOpen)}
+          aria-expanded={chatOpen}
+          className="relative rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-100"
+        >
+          {t('chat.toggle')}
+          {!chatOpen && room.chat.unread > 0 && (
+            <span
+              aria-label={t('chat.unread', { count: room.chat.unread })}
+              className="absolute -top-2 -right-2 min-w-5 rounded-full bg-red-500 px-1.5 text-center text-xs font-semibold leading-5 text-white"
+            >
+              {room.chat.unread > 99 ? '99+' : room.chat.unread}
+            </span>
+          )}
+        </button>
+        <button
           onClick={() => setSharing(true)}
           className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-100"
         >
@@ -287,6 +317,21 @@ function BoardEditor({ board, shapes: initialShapes, version }: Loaded) {
           onPointerPosition={room.sendCursor}
           overlay={<CursorLayer cursors={room.cursors} />}
         />
+        {chatOpen && (
+          <ChatPanel
+            messages={room.chat.messages}
+            pending={room.chat.pending}
+            hasMore={room.chat.hasMore}
+            typingUsers={room.chat.typingUsers}
+            selfId={user?.id}
+            onSend={room.chat.send}
+            onTyping={room.chat.reportTyping}
+            onRetry={room.chat.retry}
+            onDiscard={room.chat.discard}
+            onLoadOlder={room.chat.loadOlder}
+            onClose={() => setChatOpen(false)}
+          />
+        )}
       </div>
     </div>
   )

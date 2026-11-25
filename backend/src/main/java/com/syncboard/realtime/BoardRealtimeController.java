@@ -1,7 +1,10 @@
 package com.syncboard.realtime;
 
 import com.syncboard.board.BoardAccessService;
+import com.syncboard.chat.ChatDtos.ChatMessageResponse;
+import com.syncboard.chat.ChatService;
 import com.syncboard.common.ApiException;
+import com.syncboard.realtime.RealtimeDtos.ChatRequest;
 import com.syncboard.realtime.RealtimeDtos.CursorBroadcast;
 import com.syncboard.realtime.RealtimeDtos.CursorRequest;
 import com.syncboard.realtime.RealtimeDtos.ErrorMessage;
@@ -9,6 +12,8 @@ import com.syncboard.realtime.RealtimeDtos.JoinResponse;
 import com.syncboard.realtime.RealtimeDtos.OnlineUser;
 import com.syncboard.realtime.RealtimeDtos.OpBroadcast;
 import com.syncboard.realtime.RealtimeDtos.OpRequest;
+import com.syncboard.realtime.RealtimeDtos.TypingBroadcast;
+import com.syncboard.realtime.RealtimeDtos.TypingRequest;
 import java.security.Principal;
 import java.util.List;
 import org.springframework.context.MessageSource;
@@ -33,6 +38,8 @@ import org.springframework.web.socket.messaging.SessionDisconnectEvent;
  *       online list,</li>
  *   <li>sends ops to {@code /app/boards/{id}/ops}; accepted ops are broadcast with a seq to everyone,</li>
  *   <li>sends its pointer to {@code /app/boards/{id}/cursor} (viewers too); relayed to the others,</li>
+ *   <li>sends chat messages to {@code /app/boards/{id}/chat} and "typing" to {@code /app/boards/{id}/typing}
+ *       (viewers too); messages are stored and broadcast, typing is only relayed,</li>
  *   <li>disconnects when leaving the page, which removes it from the online list.</li>
  * </ol>
  */
@@ -45,14 +52,16 @@ public class BoardRealtimeController {
     private final BoardAccessService access;
     private final PresenceRegistry presence;
     private final BoardRooms rooms;
+    private final ChatService chat;
     private final SimpMessagingTemplate messaging;
     private final MessageSource messages;
 
     public BoardRealtimeController(BoardAccessService access, PresenceRegistry presence, BoardRooms rooms,
-            SimpMessagingTemplate messaging, MessageSource messages) {
+            ChatService chat, SimpMessagingTemplate messaging, MessageSource messages) {
         this.access = access;
         this.presence = presence;
         this.rooms = rooms;
+        this.chat = chat;
         this.messaging = messaging;
         this.messages = messages;
     }
@@ -64,7 +73,8 @@ public class BoardRealtimeController {
         BoardRooms.Snapshot snapshot = rooms.snapshot(boardId);
         List<OnlineUser> online = presence.join(headers.getSessionId(), boardId, user, a.role());
         broadcastPresence(boardId, online);
-        return new JoinResponse(boardId, user.userId(), online, snapshot.shapes(), snapshot.seq());
+        return new JoinResponse(boardId, user.userId(), online, snapshot.shapes(), snapshot.seq(),
+                chat.latest(boardId));
     }
 
     @MessageMapping("/boards/{boardId}/ops")
@@ -84,8 +94,53 @@ public class BoardRealtimeController {
             rooms.apply(boardId, request.op(), (seq, op) -> messaging.convertAndSend(
                     "/topic/boards/" + boardId + "/ops", new OpBroadcast(seq, user.userId(), clientOpId, op)));
         } catch (ApiException e) {
-            sendError(user, e.getCode(), e.getMessageKey(), clientOpId);
+            sendError(user, ErrorMessage.forOp(e.getCode(), text(user, e.getMessageKey()), clientOpId));
         }
+    }
+
+    /**
+     * Chat, open to every role. Access is re-checked on every message (by {@link ChatService#post}), like
+     * ops, so a removed member can't keep writing. The message is stored before it is broadcast; clients
+     * order messages by id, so concurrent senders may be broadcast slightly out of order.
+     */
+    @MessageMapping("/boards/{boardId}/chat")
+    public void chat(@DestinationVariable long boardId, @Payload ChatRequest request, Principal principal,
+            SimpMessageHeaderAccessor headers) {
+        BoardPrincipal user = (BoardPrincipal) principal;
+        String clientMessageId = request == null ? null : request.clientMessageId();
+        try {
+            if (!presence.isJoined(headers.getSessionId(), boardId)) {
+                throw new ApiException(HttpStatus.CONFLICT, "NOT_JOINED", "error.chatNotJoined");
+            }
+            ChatMessageResponse message = chat.post(user.userId(), user.fullName(), boardId, clientMessageId,
+                    request == null ? null : request.text());
+            presence.stopTyping(headers.getSessionId());
+            messaging.convertAndSend("/topic/boards/" + boardId + "/chat", message);
+            messaging.convertAndSend(typingTopic(boardId), new TypingBroadcast(user.userId(), false));
+        } catch (ApiException e) {
+            sendError(user, ErrorMessage.forChat(e.getCode(), text(user, e.getMessageKey()), clientMessageId));
+        }
+    }
+
+    /** "Is typing…". Not stored; like cursors, invalid or too frequent updates are dropped silently. */
+    @MessageMapping("/boards/{boardId}/typing")
+    public void typing(@DestinationVariable long boardId, @Payload TypingRequest request, Principal principal,
+            SimpMessageHeaderAccessor headers) {
+        BoardPrincipal user = (BoardPrincipal) principal;
+        String sessionId = headers.getSessionId();
+        boolean typing = request != null && Boolean.TRUE.equals(request.typing());
+        if (typing) {
+            if (!presence.acceptTyping(sessionId, boardId, System.currentTimeMillis())) {
+                return;
+            }
+        } else {
+            // Never rate-limited, or the indicator would linger.
+            if (!presence.isJoined(sessionId, boardId)) {
+                return;
+            }
+            presence.stopTyping(sessionId);
+        }
+        messaging.convertAndSend(typingTopic(boardId), new TypingBroadcast(user.userId(), typing));
     }
 
     /**
@@ -121,6 +176,7 @@ public class BoardRealtimeController {
         long userId = event.getUser() instanceof BoardPrincipal user ? user.userId() : 0;
         for (long boardId : presence.leaveAll(event.getSessionId())) {
             messaging.convertAndSend("/topic/boards/" + boardId + "/cursors", CursorBroadcast.gone(cursorId, userId));
+            messaging.convertAndSend(typingTopic(boardId), new TypingBroadcast(userId, false));
             List<OnlineUser> online = presence.online(boardId);
             if (online.isEmpty()) {
                 rooms.close(boardId); // last one out: write the drawing back now
@@ -132,19 +188,29 @@ public class BoardRealtimeController {
 
     @MessageExceptionHandler(ApiException.class)
     public void handleApiException(ApiException ex, Principal principal) {
-        sendError((BoardPrincipal) principal, ex.getCode(), ex.getMessageKey(), null);
+        BoardPrincipal user = (BoardPrincipal) principal;
+        sendError(user, ErrorMessage.forOp(ex.getCode(), text(user, ex.getMessageKey()), null));
     }
 
     /** Payloads that aren't valid JSON for the destination. */
     @MessageExceptionHandler(MessageConversionException.class)
     public void handleUnreadable(Principal principal) {
-        sendError((BoardPrincipal) principal, "INVALID_OP", "error.invalidOp", null);
+        BoardPrincipal user = (BoardPrincipal) principal;
+        sendError(user, ErrorMessage.forOp("INVALID_OP", text(user, "error.invalidOp"), null));
     }
 
-    /** Rejections go to the sender's error queue, in their language. */
-    private void sendError(BoardPrincipal user, String code, String messageKey, String clientOpId) {
-        String text = messages.getMessage(messageKey, null, messageKey, user.locale());
-        messaging.convertAndSendToUser(user.getName(), "/queue/errors", new ErrorMessage(code, text, clientOpId));
+    /** Rejections go to the sender's error queue. */
+    private void sendError(BoardPrincipal user, ErrorMessage error) {
+        messaging.convertAndSendToUser(user.getName(), "/queue/errors", error);
+    }
+
+    /** In the user's language. */
+    private String text(BoardPrincipal user, String messageKey) {
+        return messages.getMessage(messageKey, null, messageKey, user.locale());
+    }
+
+    private static String typingTopic(long boardId) {
+        return "/topic/boards/" + boardId + "/typing";
     }
 
     private static boolean isCoordinate(double value) {

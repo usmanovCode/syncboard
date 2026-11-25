@@ -1,6 +1,7 @@
 import { Client, type IMessage } from '@stomp/stompjs'
 import { tokenStorage } from '../api/client'
 import { currentLanguage } from '../i18n'
+import type { ChatMessage, TypingMessage } from '../chat/types'
 import type { ConnectionStatus, CursorMessage, JoinPayload, OnlineUser, RemoteOp, SocketError } from './types'
 
 export type BoardSocketHandlers = {
@@ -11,6 +12,9 @@ export type BoardSocketHandlers = {
   /** Accepted ops (ours included), in seq order. */
   onOp: (op: RemoteOp) => void
   onCursor: (cursor: CursorMessage) => void
+  /** Stored chat messages (ours included). May arrive out of id order or twice. */
+  onChat: (message: ChatMessage) => void
+  onTyping: (typing: TypingMessage) => void
   onError: (error: SocketError) => void
   /** The server refused the token (e.g. expired): reconnecting won't help. */
   onUnauthorized: () => void
@@ -57,6 +61,8 @@ export function openBoardSocket(boardId: number, handlers: BoardSocketHandlers):
       client.subscribe(topic('presence'), (m) => handlers.onPresence(parse<OnlineUser[]>(m)))
       client.subscribe(topic('ops'), (m) => handlers.onOp(parse<RemoteOp>(m)))
       client.subscribe(topic('cursors'), (m) => handlers.onCursor(parse<CursorMessage>(m)))
+      client.subscribe(topic('chat'), (m) => handlers.onChat(parse<ChatMessage>(m)))
+      client.subscribe(topic('typing'), (m) => handlers.onTyping(parse<TypingMessage>(m)))
       client.subscribe('/user/queue/errors', (m) => handlers.onError(parse<SocketError>(m)))
       join()
     },

@@ -54,6 +54,8 @@ function handlers(): BoardSocketHandlers {
     onPresence: vi.fn(),
     onOp: vi.fn(),
     onCursor: vi.fn(),
+    onChat: vi.fn(),
+    onTyping: vi.fn(),
     onError: vi.fn(),
     onUnauthorized: vi.fn(),
   }
@@ -97,6 +99,8 @@ describe('openBoardSocket', () => {
       '/topic/boards/7/presence',
       '/topic/boards/7/ops',
       '/topic/boards/7/cursors',
+      '/topic/boards/7/chat',
+      '/topic/boards/7/typing',
       '/user/queue/errors',
       '/app/boards/7/join',
     ])
@@ -118,6 +122,21 @@ describe('openBoardSocket', () => {
     const cursor = { cursorId: 'c1', userId: 2, x: 1, y: 2 }
     deliver('/topic/boards/7/cursors', cursor)
     expect(h.onCursor).toHaveBeenCalledWith(cursor)
+
+    const message = {
+      id: 3,
+      userId: 2,
+      userName: 'Vali',
+      color: '#2563eb',
+      text: 'Salom',
+      createdAt: '2026-11-25T10:00:00Z',
+      clientMessageId: 'm1',
+    }
+    deliver('/topic/boards/7/chat', message)
+    expect(h.onChat).toHaveBeenCalledWith(message)
+
+    deliver('/topic/boards/7/typing', { userId: 2, typing: true })
+    expect(h.onTyping).toHaveBeenCalledWith({ userId: 2, typing: true })
   })
 
   it('re-joins on request to get a fresh snapshot', () => {
