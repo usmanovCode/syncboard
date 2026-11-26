@@ -28,9 +28,13 @@ public class PresenceRegistry {
     /** Cursor updates closer together than this are dropped (clients send at most ~20/s). */
     static final long MIN_CURSOR_INTERVAL_MS = 30;
 
+    /** "Typing" updates closer together than this are dropped (clients repeat it every few seconds). */
+    static final long MIN_TYPING_INTERVAL_MS = 1000;
+
     /** sessionId -> (boardId -> entry). Joining order is kept for a stable online list. */
     private final Map<String, Map<Long, Entry>> sessions = new LinkedHashMap<>();
     private final Map<String, Long> lastCursorAt = new HashMap<>();
+    private final Map<String, Long> lastTypingAt = new HashMap<>();
 
     /** The same user always gets the same color, on every board and in every tab. */
     public static String colorOf(long userId) {
@@ -46,6 +50,7 @@ public class PresenceRegistry {
     /** Removes the session everywhere and returns the boards it was on. */
     public synchronized Set<Long> leaveAll(String sessionId) {
         lastCursorAt.remove(sessionId);
+        lastTypingAt.remove(sessionId);
         Map<Long, Entry> boards = sessions.remove(sessionId);
         return boards == null ? Set.of() : Set.copyOf(boards.keySet());
     }
@@ -64,6 +69,27 @@ public class PresenceRegistry {
         }
         lastCursorAt.put(sessionId, nowMillis);
         return true;
+    }
+
+    /**
+     * Whether a "typing" update from this session should be relayed: the session must be on the board
+     * and not repeating it faster than {@link #MIN_TYPING_INTERVAL_MS}.
+     */
+    public synchronized boolean acceptTyping(String sessionId, long boardId, long nowMillis) {
+        if (!isJoined(sessionId, boardId)) {
+            return false;
+        }
+        Long last = lastTypingAt.get(sessionId);
+        if (last != null && nowMillis - last < MIN_TYPING_INTERVAL_MS) {
+            return false;
+        }
+        lastTypingAt.put(sessionId, nowMillis);
+        return true;
+    }
+
+    /** Ends a "typing" burst, so the next start is relayed at once. */
+    public synchronized void stopTyping(String sessionId) {
+        lastTypingAt.remove(sessionId);
     }
 
     /**

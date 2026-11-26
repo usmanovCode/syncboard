@@ -25,7 +25,15 @@ export const socketState = {
   /** Simulates a successful (re)connect: the join reply, then status "connected". */
   join(payload: Partial<JoinPayload> = {}) {
     const h = this.require()
-    h.onJoined({ boardId: this.boardId ?? 0, userId: 1, online: [], shapes: [], seq: 0, ...payload })
+    h.onJoined({
+      boardId: this.boardId ?? 0,
+      userId: 1,
+      online: [],
+      shapes: [],
+      seq: 0,
+      chat: { messages: [], hasMore: false },
+      ...payload,
+    })
     h.onStatus('connected')
   },
   require(): BoardSocketHandlers {

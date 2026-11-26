@@ -8,9 +8,10 @@ import { AuthProvider } from '../auth/AuthProvider'
 import type { BoardOp } from '../canvas/ops'
 import type { PendingOp } from '../canvas/sync'
 import type { Shape } from '../canvas/types'
+import type { ChatMessage, ChatPage } from '../chat/types'
 import { setLanguage } from '../i18n'
 import type { OnlineUser } from '../realtime/types'
-import { CURSOR_SEND_INTERVAL_MS, CURSOR_STALE_MS } from '../realtime/useBoardRoom'
+import { CURSOR_SEND_INTERVAL_MS, CURSOR_STALE_MS, TYPING_REPEAT_MS, TYPING_STALE_MS } from '../realtime/useBoardRoom'
 import { konvaState } from '../test/konvaMock'
 import { socketState } from '../test/socketMock'
 
@@ -44,6 +45,7 @@ function fakeBackend({
   getStatus = 200,
   role = 'OWNER' as BoardRole,
   members = [OWNER_MEMBER],
+  olderMessages = { messages: [], hasMore: false } as ChatPage | 'error',
 } = {}) {
   let people = [...members]
   const board = { ...BOARD, role }
@@ -60,6 +62,10 @@ function fakeBackend({
       const member = { userId: 2, email, fullName: 'Vali', role: memberRole }
       people = [...people, member]
       return jsonResponse(201, member)
+    }
+    if (url.startsWith('/api/boards/7/messages?before=') && method === 'GET') {
+      if (olderMessages === 'error') return jsonResponse(500, { code: 'INTERNAL', detail: 'Server error' })
+      return jsonResponse(200, olderMessages)
     }
     const memberMatch = /^\/api\/boards\/7\/members\/(\d+)$/.exec(url)
     if (memberMatch && method === 'PATCH') {
@@ -350,7 +356,7 @@ describe('BoardPage', () => {
     // Typing a shortcut letter in the text box must not switch tools.
     await userEvent.type(screen.getByRole('textbox', { name: 'Text' }), 'Salom Rr{Enter}')
 
-    expect(screen.queryByRole('textbox')).toBeNull()
+    expect(screen.queryByRole('textbox', { name: 'Text' })).toBeNull()
     expect(shapes()).toHaveLength(1)
     expect(shapes()[0]).toHaveTextContent('Salom Rr')
     expect(tool(/^Text/)).toHaveAttribute('aria-pressed', 'true')
@@ -367,7 +373,7 @@ describe('BoardPage', () => {
     fireEvent.pointerDown(stage())
     await userEvent.type(screen.getByRole('textbox', { name: 'Text' }), 'Salom{Escape}')
 
-    expect(screen.queryByRole('textbox')).toBeNull()
+    expect(screen.queryByRole('textbox', { name: 'Text' })).toBeNull()
     expect(shapes()).toHaveLength(0)
     expect(sentOps()).toEqual([])
   })
@@ -684,6 +690,306 @@ describe('BoardPage', () => {
       fireEvent.pointerMove(stage())
 
       expect(sentCursors()).toEqual([{ x: 5, y: 6 }])
+    })
+  })
+
+  describe('chat', () => {
+    const ali: OnlineUser = { userId: 1, name: 'Ali Valiyev', color: '#e11d48', role: 'OWNER' }
+    const vali: OnlineUser = { userId: 2, name: 'Vali', color: '#2563eb', role: 'VIEWER' }
+    const gani: OnlineUser = { userId: 3, name: "G'ani", color: '#16a34a', role: 'EDITOR' }
+    const sobir: OnlineUser = { userId: 4, name: 'Sobir', color: '#7c3aed', role: 'VIEWER' }
+    let nextId = 100
+    const message = (userId: number, text: string, extra: Partial<ChatMessage> = {}): ChatMessage => {
+      const id = nextId++
+      const author = [ali, vali, gani, sobir].find((u) => u.userId === userId)!
+      return {
+        id,
+        userId,
+        userName: author.name,
+        color: author.color,
+        text,
+        createdAt: new Date().toISOString(),
+        clientMessageId: `c${id}`,
+        ...extra,
+      }
+    }
+    const log = () => screen.getByRole('log', { name: 'Chat messages' })
+    const input = () => screen.getByRole('textbox', { name: 'Message' })
+    const sentChat = () =>
+      socketState.sent.filter((s) => s.path === 'chat').map((s) => s.body as { clientMessageId: string; text: string })
+    const sentTyping = () => socketState.sent.filter((s) => s.path === 'typing').map((s) => s.body)
+    const receive = (m: ChatMessage) => act(() => socketState.require().onChat(m))
+    const echo = (sent: { clientMessageId: string; text: string }) =>
+      receive(message(ali.userId, sent.text, { clientMessageId: sent.clientMessageId }))
+
+    async function openChat({
+      role = 'OWNER' as BoardRole,
+      history = [] as ChatMessage[],
+      hasMore = false,
+      older = { messages: [], hasMore: false } as ChatPage | 'error',
+    } = {}) {
+      fakeBackend({ role, olderMessages: older })
+      await openBoard({ join: false })
+      act(() =>
+        socketState.join({ userId: ali.userId, online: [ali, vali, gani, sobir], chat: { messages: history, hasMore } }),
+      )
+    }
+
+    it('shows the history from the join reply, grouped by author', async () => {
+      await openChat({ history: [message(2, 'Salom!'), message(2, 'Qalaysiz?'), message(1, 'Yaxshi')] })
+
+      const items = within(log()).getAllByRole('listitem')
+      expect(items).toHaveLength(3)
+      expect(items[0]).toHaveTextContent('Vali')
+      expect(items[0]).toHaveTextContent('Salom!')
+      expect(items[1]).not.toHaveTextContent('Vali') // same author: no new name line
+      expect(items[2]).toHaveTextContent('You')
+      expect(within(items[0]).getByText('Vali')).toHaveStyle({ color: '#2563eb' })
+    })
+
+    it('says when there are no messages yet', async () => {
+      await openChat()
+
+      expect(within(log()).getByText('No messages yet. Say hello!')).toBeInTheDocument()
+    })
+
+    it('sends with Enter and shows the message as pending until the server confirms it', async () => {
+      await openChat()
+
+      await userEvent.type(input(), '  Salom hammaga  {Enter}')
+
+      expect(input()).toHaveValue('')
+      expect(sentChat()).toEqual([{ clientMessageId: expect.any(String), text: 'Salom hammaga' }])
+      expect(within(log()).getByText('Sending…')).toBeInTheDocument()
+
+      echo(sentChat()[0])
+      expect(within(log()).queryByText('Sending…')).toBeNull()
+      expect(within(log()).getAllByText('Salom hammaga')).toHaveLength(1)
+    })
+
+    it('adds a new line with Shift+Enter and ignores empty messages', async () => {
+      await openChat()
+
+      await userEvent.type(input(), '   {Enter}')
+      expect(sentChat()).toEqual([])
+      expect(screen.getByRole('button', { name: 'Send' })).toBeDisabled()
+
+      await userEvent.type(input(), 'bir{Shift>}{Enter}{/Shift}ikki')
+      expect(input()).toHaveValue('   bir\nikki')
+      await userEvent.click(screen.getByRole('button', { name: 'Send' }))
+      expect(sentChat().map((m) => m.text)).toEqual(['bir\nikki'])
+    })
+
+    it("doesn't send while a Korean IME is composing", async () => {
+      await openChat()
+      await userEvent.type(input(), '안녕')
+
+      fireEvent.keyDown(input(), { key: 'Enter', isComposing: true })
+      expect(sentChat()).toEqual([])
+
+      fireEvent.keyDown(input(), { key: 'Enter' })
+      expect(sentChat().map((m) => m.text)).toEqual(['안녕'])
+    })
+
+    it('keeps one message in flight and sends the next after the echo', async () => {
+      await openChat()
+
+      await userEvent.type(input(), 'bir{Enter}ikki{Enter}')
+      expect(sentChat().map((m) => m.text)).toEqual(['bir'])
+
+      echo(sentChat()[0])
+      expect(sentChat().map((m) => m.text)).toEqual(['bir', 'ikki'])
+    })
+
+    it("shows other people's messages as they arrive, in server order", async () => {
+      await openChat()
+      const first = message(2, 'birinchi')
+      const second = message(3, 'ikkinchi')
+
+      receive(second)
+      receive(first)
+      receive(second) // duplicate
+
+      const items = within(log()).getAllByRole('listitem')
+      expect(items).toHaveLength(2)
+      expect(items[0]).toHaveTextContent('birinchi')
+      expect(items[1]).toHaveTextContent('ikkinchi')
+    })
+
+    it('lets viewers write', async () => {
+      await openChat({ role: 'VIEWER' })
+      expect(screen.queryByRole('toolbar')).toBeNull()
+
+      await userEvent.type(input(), 'Men faqat kuzataman{Enter}')
+
+      expect(sentChat().map((m) => m.text)).toEqual(['Men faqat kuzataman'])
+    })
+
+    it('marks a rejected message as not sent and can retry or discard it', async () => {
+      await openChat()
+      await userEvent.type(input(), 'Salom{Enter}')
+      const { clientMessageId } = sentChat()[0]
+
+      act(() => socketState.require().onError({ code: 'BOARD_NOT_FOUND', message: 'Board not found', clientMessageId }))
+      expect(within(log()).getByText('Not sent: Board not found')).toBeInTheDocument()
+      expect(screen.queryByRole('alert')).toBeNull() // not the drawing's error banner
+
+      await userEvent.click(screen.getByRole('button', { name: 'Retry' }))
+      expect(sentChat()).toHaveLength(2)
+      expect(sentChat()[1].clientMessageId).toBe(clientMessageId) // same id: safe to re-send
+
+      act(() => socketState.require().onError({ code: 'X', message: 'Nope', clientMessageId }))
+      await userEvent.click(screen.getByRole('button', { name: 'Discard' }))
+      expect(within(log()).queryByText('Salom')).toBeNull()
+    })
+
+    it('queues messages while offline and sends them after rejoining', async () => {
+      await openChat()
+      act(() => socketState.require().onStatus('reconnecting'))
+
+      await userEvent.type(input(), 'Oflayn{Enter}')
+      expect(sentChat()).toEqual([])
+
+      act(() => socketState.join({ userId: ali.userId, online: [ali] }))
+      expect(sentChat().map((m) => m.text)).toEqual(['Oflayn'])
+    })
+
+    it('loads older messages on request', async () => {
+      const older = { messages: [message(2, 'eski xabar')], hasMore: false }
+      const latest = message(2, 'yangi xabar')
+      await openChat({ history: [latest], hasMore: true, older })
+
+      await userEvent.click(screen.getByRole('button', { name: 'Load older messages' }))
+
+      expect(await within(log()).findByText('eski xabar')).toBeInTheDocument()
+      const items = within(log()).getAllByRole('listitem')
+      expect(items[0]).toHaveTextContent('eski xabar')
+      expect(items[1]).toHaveTextContent('yangi xabar')
+      expect(screen.queryByRole('button', { name: 'Load older messages' })).toBeNull()
+      expect(fetch).toHaveBeenCalledWith(`/api/boards/7/messages?before=${latest.id}`, expect.anything())
+    })
+
+    it('says when older messages could not be loaded', async () => {
+      await openChat({ history: [message(2, 'yangi')], hasMore: true, older: 'error' })
+
+      await userEvent.click(screen.getByRole('button', { name: 'Load older messages' }))
+
+      expect(await within(log()).findByRole('alert')).toHaveTextContent("Couldn't load older messages.")
+    })
+
+    it('collapses, remembers that, and counts unread messages meanwhile', async () => {
+      await openChat({ history: [message(2, 'eski')] })
+      const toggle = screen.getByRole('button', { name: 'Chat' })
+      expect(toggle).toHaveAttribute('aria-expanded', 'true')
+
+      await userEvent.click(screen.getByRole('button', { name: 'Close chat' }))
+      expect(screen.queryByRole('log')).toBeNull()
+      expect(toggle).toHaveAttribute('aria-expanded', 'false')
+      expect(localStorage.getItem('syncboard.chatOpen')).toBe('false')
+      expect(screen.queryByLabelText(/unread/)).toBeNull() // the history isn't new
+
+      receive(message(2, 'bir'))
+      receive(message(3, 'ikki'))
+      expect(screen.getByLabelText('2 unread')).toHaveTextContent('2')
+
+      await userEvent.click(toggle)
+      expect(log()).toBeInTheDocument()
+      expect(screen.queryByLabelText(/unread/)).toBeNull()
+      expect(localStorage.getItem('syncboard.chatOpen')).toBe('true')
+    })
+
+    it('starts collapsed when it was closed last time', async () => {
+      localStorage.setItem('syncboard.chatOpen', 'false')
+      await openChat()
+
+      expect(screen.queryByRole('log')).toBeNull()
+      expect(screen.getByRole('button', { name: 'Chat' })).toHaveAttribute('aria-expanded', 'false')
+    })
+
+    it("doesn't switch drawing tools while typing a message", async () => {
+      await openChat()
+
+      await userEvent.type(input(), 'r')
+
+      expect(tool(/Pen/)).toHaveAttribute('aria-pressed', 'true')
+    })
+
+    it('is translated to Korean', async () => {
+      await setLanguage('ko')
+      await openChat()
+
+      expect(screen.getByRole('log', { name: '채팅 메시지' })).toBeInTheDocument()
+      expect(screen.getByRole('textbox', { name: '메시지' })).toHaveAttribute('placeholder', '메시지를 입력하세요…')
+      act(() => socketState.require().onTyping({ userId: vali.userId, typing: true }))
+      expect(screen.getByText('Vali 님이 입력 중…')).toBeInTheDocument()
+    })
+
+    describe('typing indicator', () => {
+      beforeEach(() => {
+        vi.useFakeTimers({ shouldAdvanceTime: true })
+      })
+      afterEach(() => {
+        vi.useRealTimers()
+      })
+      const typing = (userId: number, active = true) =>
+        act(() => socketState.require().onTyping({ userId, typing: active }))
+      const typingLine = () => screen.queryByText(/typing…$/)
+
+      it('shows who is typing, and hides it when they stop, send or go quiet', async () => {
+        await openChat()
+
+        typing(vali.userId)
+        expect(typingLine()).toHaveTextContent('Vali is typing…')
+        typing(gani.userId)
+        expect(typingLine()).toHaveTextContent("Vali and G'ani are typing…")
+        typing(sobir.userId)
+        expect(typingLine()).toHaveTextContent('Several people are typing…')
+
+        typing(sobir.userId, false)
+        receive(message(gani.userId, 'Tayyor'))
+        expect(typingLine()).toHaveTextContent('Vali is typing…')
+
+        await act(() => vi.advanceTimersByTimeAsync(TYPING_STALE_MS + 1000))
+        expect(typingLine()).toBeNull()
+      })
+
+      it("ignores my own tabs and people who aren't online", async () => {
+        await openChat()
+
+        typing(ali.userId)
+        typing(99)
+        expect(typingLine()).toBeNull()
+
+        typing(vali.userId)
+        act(() => socketState.require().onPresence([ali]))
+        expect(typingLine()).toBeNull()
+      })
+
+      it('announces my typing, repeated while I type, and its end', async () => {
+        await openChat()
+
+        await userEvent.type(input(), 'Sa')
+        expect(sentTyping()).toEqual([{ typing: true }]) // not once per key
+
+        await act(() => vi.advanceTimersByTimeAsync(TYPING_REPEAT_MS))
+        await userEvent.type(input(), 'l')
+        expect(sentTyping()).toEqual([{ typing: true }, { typing: true }])
+
+        await userEvent.clear(input())
+        expect(sentTyping().at(-1)).toEqual({ typing: false })
+
+        await userEvent.type(input(), 'om')
+        await userEvent.tab()
+        expect(sentTyping().at(-1)).toEqual({ typing: false })
+      })
+
+      it("doesn't send a separate stop after a message (the server ends typing)", async () => {
+        await openChat()
+
+        await userEvent.type(input(), 'Salom{Enter}')
+
+        expect(sentTyping()).toEqual([{ typing: true }])
+      })
     })
   })
 })

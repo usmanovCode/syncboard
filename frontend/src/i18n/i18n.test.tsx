@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from 'vitest'
 import App from '../App'
 import { AuthProvider } from '../auth/AuthProvider'
 import { detectLanguage, setLanguage } from '.'
-import { formatDate } from './format'
+import { formatDate, formatMessageTime } from './format'
 
 function jsonResponse(status: number, body: unknown) {
   return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
@@ -66,6 +66,18 @@ describe('i18n', () => {
   it('formats dates per language', () => {
     expect(formatDate('2026-11-25T10:00:00Z', 'en')).toBe('Nov 25, 2026')
     expect(formatDate('2026-11-25T10:00:00Z', 'ko')).toBe('2026년 11월 25일')
+  })
+
+  it('formats chat times, with the date only for other days', () => {
+    const now = new Date(2026, 10, 25, 18, 0)
+    const today = new Date(2026, 10, 25, 14, 5).toISOString()
+    const yesterday = new Date(2026, 10, 24, 9, 30).toISOString()
+    const plain = (text: string) => text.replace(/\s/g, ' ')
+
+    expect(plain(formatMessageTime(today, 'en', now))).toBe('2:05 PM')
+    expect(plain(formatMessageTime(today, 'ko', now))).toBe('오후 2:05')
+    expect(plain(formatMessageTime(yesterday, 'en', now))).toBe('Nov 24, 9:30 AM')
+    expect(plain(formatMessageTime(yesterday, 'ko', now))).toBe('11월 24일 오전 9:30')
   })
 
   it('detects the language from storage first, then the browser', () => {

@@ -1,4 +1,5 @@
 import type { TFunction } from 'i18next'
+import type { ChatPage } from '../chat/types'
 import { apiFetch } from './client'
 
 /** The caller's role on a board. Owners manage it, editors draw, viewers only watch. */
@@ -59,4 +60,9 @@ export const membersApi = {
   /** The owner removes anyone; a member removing themselves leaves the board. */
   remove: (boardId: number, userId: number) =>
     apiFetch<void>(`/api/boards/${boardId}/members/${userId}`, { method: 'DELETE' }),
+}
+
+export const chatApi = {
+  /** Messages older than `before` (a message id), oldest first. The newest page comes with the join. */
+  history: (boardId: number, before: number) => apiFetch<ChatPage>(`/api/boards/${boardId}/messages?before=${before}`),
 }

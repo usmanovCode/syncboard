@@ -35,7 +35,7 @@ import org.springframework.stereotype.Component;
 public class StompAuthInterceptor implements ChannelInterceptor {
 
     private static final Pattern BOARD_SUBSCRIPTION =
-            Pattern.compile("^/(?:topic|app)/boards/(\\d+)/(?:ops|presence|cursors|join)$");
+            Pattern.compile("^/(?:topic|app)/boards/(\\d+)/(?:ops|presence|cursors|chat|typing|join)$");
     private static final List<Locale> LOCALES = List.of(Locale.ENGLISH, Locale.KOREAN);
 
     private final JwtDecoder jwtDecoder;
