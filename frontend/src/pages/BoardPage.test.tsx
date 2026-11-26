@@ -942,6 +942,126 @@ describe('BoardPage', () => {
     })
   })
 
+  describe('PNG export', () => {
+    const exportButton = () => screen.getByRole('button', { name: 'Export PNG' })
+
+    /** jsdom has no canvas drawing or PNG encoding, nor object URLs: fake them and record downloads. */
+    function stubBrowser({ encodes = true } = {}) {
+      const context = { fillStyle: '', fillRect: vi.fn(), drawImage: vi.fn() }
+      vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(context as never)
+      vi.spyOn(HTMLCanvasElement.prototype, 'toBlob').mockImplementation((callback) =>
+        callback(encodes ? new Blob(['png'], { type: 'image/png' }) : null),
+      )
+      const downloads: { name: string; href: string }[] = []
+      vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) {
+        downloads.push({ name: this.download, href: this.getAttribute('href') ?? '' })
+      })
+      const blobs: Blob[] = []
+      vi.stubGlobal(
+        'URL',
+        class extends URL {
+          static createObjectURL(blob: Blob) {
+            blobs.push(blob)
+            return 'blob:export'
+          }
+          static revokeObjectURL() {}
+        },
+      )
+      return { context, downloads, blobs }
+    }
+
+    it('downloads the whole drawing as a PNG named after the board, whatever the pan', async () => {
+      const { context, downloads, blobs } = stubBrowser()
+      fakeBackend()
+      await openBoard()
+      fireEvent.wheel(screen.getByRole('region', { name: 'Drawing canvas' }), { deltaX: 50, deltaY: 20 })
+
+      await userEvent.click(exportButton())
+
+      await waitFor(() => expect(downloads).toHaveLength(1))
+      expect(downloads[0].name).toMatch(/^Dizayn eskizlari-\d{4}-\d{2}-\d{2}\.png$/)
+      expect(downloads[0].href).toBe('blob:export')
+      expect(blobs[0].type).toBe('image/png')
+      // EXISTING spans (8, 8)–(52, 42) with its stroke; plus 32 of padding, moved by the pan (-50, -20).
+      expect(konvaState.exports[0].config).toEqual({ x: -74, y: -44, width: 108, height: 98, pixelRatio: 2 })
+      expect(context.fillStyle).toBe('#ffffff')
+      expect(context.fillRect).toHaveBeenCalledWith(0, 0, 216, 196)
+      expect(context.drawImage).toHaveBeenCalledTimes(1)
+    })
+
+    it('comes out the same size at any zoom', async () => {
+      stubBrowser()
+      fakeBackend()
+      await openBoard()
+      for (let i = 0; i < 3; i++) {
+        fireEvent.wheel(screen.getByRole('region', { name: 'Drawing canvas' }), { ctrlKey: true, deltaY: -100 })
+      }
+
+      await userEvent.click(exportButton())
+
+      await waitFor(() => expect(konvaState.exports).toHaveLength(1))
+      const { width, height, pixelRatio } = konvaState.exports[0].config
+      expect(width * pixelRatio).toBeCloseTo(216)
+      expect(height * pixelRatio).toBeCloseTo(196)
+    })
+
+    it('leaves the selection frame out of the image', async () => {
+      stubBrowser()
+      fakeBackend()
+      await openBoard()
+      await userEvent.click(tool(/^Select/))
+      fireEvent.pointerDown(shapes()[0])
+
+      await userEvent.click(exportButton())
+
+      await waitFor(() => expect(konvaState.exports).toHaveLength(1))
+      expect(konvaState.exports[0].selectionVisible).toBe(false)
+      expect(konvaState.selectionVisible).toBe(true) // shown again afterwards
+    })
+
+    it('is disabled while the board is empty', async () => {
+      fakeBackend({ shapes: [] })
+      await openBoard({ shapes: [] })
+
+      expect(exportButton()).toBeDisabled()
+      expect(exportButton()).toHaveAttribute('title', 'Nothing to export yet')
+
+      server.remote({ type: 'add', shape: EXISTING })
+      expect(exportButton()).toBeEnabled()
+    })
+
+    it('lets viewers export too', async () => {
+      const { downloads } = stubBrowser()
+      fakeBackend({ role: 'VIEWER' })
+      await openBoard()
+
+      await userEvent.click(exportButton())
+
+      await waitFor(() => expect(downloads).toHaveLength(1))
+    })
+
+    it('says so when the image cannot be made', async () => {
+      const { downloads } = stubBrowser({ encodes: false })
+      fakeBackend()
+      await openBoard()
+
+      await userEvent.click(exportButton())
+
+      expect(await screen.findByRole('alert')).toHaveTextContent("Couldn't export the image")
+      expect(downloads).toEqual([])
+      await userEvent.click(screen.getByRole('button', { name: 'Dismiss' }))
+      expect(screen.queryByRole('alert')).toBeNull()
+    })
+
+    it('is translated to Korean', async () => {
+      await setLanguage('ko')
+      fakeBackend({ shapes: [] })
+      await openBoard({ shapes: [] })
+
+      expect(screen.getByRole('button', { name: 'PNG로 내보내기' })).toHaveAttribute('title', '아직 내보낼 내용이 없습니다')
+    })
+  })
+
   describe('chat', () => {
     const ali: OnlineUser = { userId: 1, name: 'Ali Valiyev', color: '#e11d48', role: 'OWNER' }
     const vali: OnlineUser = { userId: 2, name: 'Vali', color: '#2563eb', role: 'VIEWER' }

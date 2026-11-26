@@ -155,6 +155,11 @@ export const en = {
     redo: 'Redo',
     textLabel: 'Text',
     textPlaceholder: 'Type, then press Enter',
+    export: {
+      button: 'Export PNG',
+      empty: 'Nothing to export yet',
+      failed: "Couldn't export the image. Please try again.",
+    },
     zoom: {
       controls: 'Zoom',
       percent: '{{value}}%',

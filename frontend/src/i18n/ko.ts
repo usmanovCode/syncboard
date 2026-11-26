@@ -159,6 +159,11 @@ export const ko: Translations<typeof en> = {
     redo: '다시 실행',
     textLabel: '텍스트',
     textPlaceholder: '입력 후 Enter를 누르세요',
+    export: {
+      button: 'PNG로 내보내기',
+      empty: '아직 내보낼 내용이 없습니다',
+      failed: '이미지를 내보내지 못했습니다. 다시 시도해 주세요.',
+    },
     zoom: {
       controls: '확대/축소',
       percent: '{{value}}%',

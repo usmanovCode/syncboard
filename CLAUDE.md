@@ -92,6 +92,10 @@ npm run build                               # tsc -b && vite build
   - **Input:** Ctrl/⌘+wheel and trackpad pinch zoom around the pointer, 10%–400% (Safari pinch arrives as `gesturechange`). The plain wheel or a two-finger scroll pans, and so do Space+drag and middle-button drag. The wheel listener is native with `passive: false`, so it can stop the browser's page zoom. Space is ignored while typing (`canvas/keyboard.ts` `isTypingTarget`).
   - **Controls:** `ZoomControls` sits bottom-right. Clicking the percentage (or Ctrl+0) goes back to 100%; "Fit to content" never goes past 100%. Viewers can pan and zoom too.
   - **Not saved:** the viewport lives in component state only and resets to 100% at the origin on reload.
+- **PNG export:** the header's "Export PNG" button (every role, disabled on an empty board) downloads the **whole drawing**, not the visible part, on a white background, as `<board name>-YYYY-MM-DD.png`.
+  - **Pure parts:** sizes and the file name are in `canvas/exportImage.ts`: content bounds + 32 padding; pixel ratio 2, scaled down to stay under 8192 px per side and Safari's 16.7 MP canvas area.
+  - **Rendering:** `CanvasStage` exposes `exportPng()` through its `ref` (`CanvasHandle`). It converts the board region with `toScreen` and divides the pixel ratio by the zoom, so the image is the same at any zoom. The selection frame is hidden while Konva renders.
+  - **Tests:** `konvaMock`'s `Stage.toCanvas` records its arguments in `konvaState.exports`. Page tests stub canvas `getContext`/`toBlob`, `URL.createObjectURL` and anchor `click`.
 - **Undo:** per user (`canvas/localHistory.ts`). It records the inverse op of each of my changes, never reverts others' work, and skips steps that no longer apply.
 - **Frontend layout:**
   - `CanvasStage.tsx` is the only place that touches react-konva.

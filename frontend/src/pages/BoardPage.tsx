@@ -1,11 +1,12 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link, useNavigate, useParams } from 'react-router'
 import { boardsApi, canEdit, type Board } from '../api/boards'
 import { ApiError } from '../api/client'
 import { useAuth } from '../auth/authContext'
-import { CanvasStage } from '../canvas/CanvasStage'
+import { CanvasStage, type CanvasHandle } from '../canvas/CanvasStage'
 import { CursorLayer } from '../canvas/CursorLayer'
+import { downloadBlob, exportFileName } from '../canvas/exportImage'
 import { isTypingTarget } from '../canvas/keyboard'
 import { emptyHistory, record, takeRedo, takeUndo, type LocalHistory } from '../canvas/localHistory'
 import { inverseOf, type BoardOp } from '../canvas/ops'
@@ -124,6 +125,9 @@ function BoardEditor({ board, shapes: initialShapes, version }: Loaded) {
   const [tool, setToolState] = useState<Tool>('pen')
   const [style, setStyle] = useState<ShapeStyle>(DEFAULT_STYLE)
   const [selectedId, setSelectedId] = useState<string | null>(null)
+  const canvasRef = useRef<CanvasHandle>(null)
+  const [exporting, setExporting] = useState(false)
+  const [exportFailed, setExportFailed] = useState(false)
   const [chatOpen, setChatOpenState] = useState(() => localStorage.getItem(CHAT_OPEN_KEY) !== 'false')
   const setChatOpen = (open: boolean) => {
     setChatOpenState(open)
@@ -230,6 +234,19 @@ function BoardEditor({ board, shapes: initialShapes, version }: Loaded) {
     return () => window.removeEventListener('beforeunload', warn)
   }, [unsynced])
 
+  async function exportPng() {
+    setExporting(true)
+    setExportFailed(false)
+    try {
+      const blob = await canvasRef.current?.exportPng()
+      if (blob) downloadBlob(blob, exportFileName(board.name, new Date()))
+    } catch {
+      setExportFailed(true)
+    } finally {
+      setExporting(false)
+    }
+  }
+
   const syncStatus: SyncStatus = !unsynced ? 'saved' : room.status === 'connected' ? 'saving' : 'offline'
 
   return (
@@ -265,6 +282,14 @@ function BoardEditor({ board, shapes: initialShapes, version }: Loaded) {
           )}
         </button>
         <button
+          onClick={exportPng}
+          disabled={shapes.length === 0 || exporting}
+          title={shapes.length === 0 ? t('board.export.empty') : undefined}
+          className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent"
+        >
+          {t('board.export.button')}
+        </button>
+        <button
           onClick={() => setSharing(true)}
           className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-100"
         >
@@ -276,6 +301,14 @@ function BoardEditor({ board, shapes: initialShapes, version }: Loaded) {
         <div role="alert" className="flex items-center gap-3 border-b border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">
           <span className="flex-1">{room.error}</span>
           <button onClick={room.clearError} className="font-medium underline">
+            {t('common.dismiss')}
+          </button>
+        </div>
+      )}
+      {exportFailed && (
+        <div role="alert" className="flex items-center gap-3 border-b border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">
+          <span className="flex-1">{t('board.export.failed')}</span>
+          <button onClick={() => setExportFailed(false)} className="font-medium underline">
             {t('common.dismiss')}
           </button>
         </div>
@@ -302,6 +335,7 @@ function BoardEditor({ board, shapes: initialShapes, version }: Loaded) {
           />
         )}
         <CanvasStage
+          ref={canvasRef}
           shapes={shapes}
           readOnly={readOnly}
           tool={tool}
