@@ -1,7 +1,17 @@
 import type Konva from 'konva'
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from 'react'
+import {
+  useEffect,
+  useImperativeHandle,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type ReactNode,
+  type Ref,
+  type RefObject,
+} from 'react'
 import { useTranslation } from 'react-i18next'
 import { Ellipse, Layer, Line, Rect, Stage, Text, Transformer } from 'react-konva'
+import { exportPixelRatio, exportRegion, toPngBlob } from './exportImage'
 import { isTypingTarget } from './keyboard'
 import {
   contentBounds,
@@ -28,7 +38,14 @@ import {
 } from './viewport'
 import { ZoomControls } from './ZoomControls'
 
+/** What the page can ask of the canvas. */
+export type CanvasHandle = {
+  /** The whole drawing as a PNG on a white background, whatever the zoom; null for an empty board. */
+  exportPng: () => Promise<Blob | null>
+}
+
 type Props = {
+  ref?: Ref<CanvasHandle>
   shapes: Shape[]
   /** Viewers: nothing can be drawn, selected or moved (they can still pan and zoom). */
   readOnly?: boolean
@@ -86,6 +103,7 @@ const CURSORS: Record<Tool, string> = {
  * around the pointer. Pan: Space+drag, middle-button drag, or the plain wheel / two-finger scroll.
  */
 export function CanvasStage({
+  ref,
   shapes,
   readOnly = false,
   tool: activeTool,
@@ -140,6 +158,39 @@ export function CanvasStage({
     textEditRef.current = edit
     setTextEditState(edit)
   }
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      async exportPng() {
+        const stage = stageRef.current
+        const bounds = contentBounds(shapes)
+        if (!stage || !bounds) return null
+        const region = exportRegion(bounds)
+        // Konva exports a part of the stage in screen pixels: convert the board region, and divide the
+        // pixel ratio by the zoom so the image comes out the same at any zoom.
+        const { scale } = viewRef.current
+        const at = toScreen(viewRef.current, region)
+        const transformer = transformerRef.current
+        const selectionVisible = transformer?.visible() ?? false
+        transformer?.visible(false) // the selection frame is not part of the drawing
+        let source: HTMLCanvasElement
+        try {
+          source = stage.toCanvas({
+            x: at.x,
+            y: at.y,
+            width: region.width * scale,
+            height: region.height * scale,
+            pixelRatio: exportPixelRatio(region) / scale,
+          })
+        } finally {
+          transformer?.visible(selectionVisible)
+        }
+        return toPngBlob(source)
+      },
+    }),
+    [shapes],
+  )
 
   // Show the selection frame around the selected shape (select tool only).
   useEffect(() => {

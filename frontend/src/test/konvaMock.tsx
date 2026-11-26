@@ -2,7 +2,8 @@
  * Stand-in for react-konva in jsdom (no real <canvas>). Stage renders a <div data-testid="stage">
  * that forwards pointer events as Konva-like event objects; shapes render as <div data-testid="shape">.
  * Tests steer the pointer position and eraser hit through `konvaState`, and can call a rendered
- * shape's Konva handlers (e.g. onDragEnd) through `konvaState.props`.
+ * shape's Konva handlers (e.g. onDragEnd) through `konvaState.props`. Stage.toCanvas (PNG export) records
+ * its arguments in `konvaState.exports`, and whether the selection frame was visible at that moment.
  *
  * Usage in a test file:  vi.mock('react-konva', () => import('../test/konvaMock'))
  */
@@ -19,10 +20,16 @@ export const konvaState = {
   hit: null as string | null,
   /** Latest props of each rendered shape, by id. */
   props: new Map<string, Props>(),
+  /** Stage.toCanvas calls: the requested region, and whether the selection frame was showing. */
+  exports: [] as { config: Record<string, number>; selectionVisible: boolean }[],
+  /** Whether the Transformer (selection frame) is visible. */
+  selectionVisible: true,
   reset() {
     this.pointer = { x: 0, y: 0 }
     this.hit = null
     this.props.clear()
+    this.exports = []
+    this.selectionVisible = true
   },
 }
 
@@ -31,6 +38,13 @@ const fakeStage = {
   getIntersection: () => (konvaState.hit ? { id: () => konvaState.hit } : null),
   findOne: () => undefined,
   getStage: () => fakeStage,
+  toCanvas: (config: Record<string, number>) => {
+    konvaState.exports.push({ config, selectionVisible: konvaState.selectionVisible })
+    const canvas = document.createElement('canvas')
+    canvas.width = Math.round(config.width * config.pixelRatio)
+    canvas.height = Math.round(config.height * config.pixelRatio)
+    return canvas
+  },
 }
 
 type Handler = ((event: unknown) => void) | undefined
@@ -65,8 +79,16 @@ export function Layer({ children }: Props) {
   return <div>{children}</div>
 }
 
-export const Transformer = forwardRef<{ nodes: () => void }, Props>(function Transformer(_props, ref) {
-  useImperativeHandle(ref, () => ({ nodes: () => {} }))
+type FakeTransformer = { nodes: () => void; visible: (show?: boolean) => boolean | void }
+
+export const Transformer = forwardRef<FakeTransformer, Props>(function Transformer(_props, ref) {
+  useImperativeHandle(ref, () => ({
+    nodes: () => {},
+    visible: (show?: boolean) => {
+      if (show === undefined) return konvaState.selectionVisible
+      konvaState.selectionVisible = show
+    },
+  }))
   return null
 })
 
