@@ -1,11 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import {
+  contentBounds,
   createText,
   dragShape,
   isDegenerate,
   moveShapeTo,
   parseCanvasContent,
   restyleShape,
+  shapeBounds,
   startShape,
   toContent,
 } from './shapes'
@@ -85,5 +87,62 @@ describe('parseCanvasContent', () => {
     expect(parseCanvasContent(raw)).toEqual([valid])
     expect(parseCanvasContent(null)).toEqual([])
     expect(parseCanvasContent({ shapes: 'nope' })).toEqual([])
+  })
+})
+
+describe('shape bounds', () => {
+  const base = { id: 's', stroke: '#000', strokeWidth: 4 }
+
+  it('covers each kind of shape, including half the stroke', () => {
+    expect(shapeBounds({ ...base, type: 'rect', x: 10, y: 20, width: 30, height: 40 })).toEqual({
+      minX: 8,
+      minY: 18,
+      maxX: 42,
+      maxY: 62,
+    })
+    // Stored shapes from elsewhere may have a negative size.
+    expect(shapeBounds({ ...base, type: 'rect', x: 10, y: 20, width: -10, height: -20 })).toEqual({
+      minX: -2,
+      minY: -2,
+      maxX: 12,
+      maxY: 22,
+    })
+    expect(shapeBounds({ ...base, type: 'ellipse', x: 50, y: 50, radiusX: 10, radiusY: 5 })).toEqual({
+      minX: 38,
+      minY: 43,
+      maxX: 62,
+      maxY: 57,
+    })
+    expect(shapeBounds({ ...base, type: 'pen', x: 100, y: 0, points: [0, 5, -10, 20, 30, 10] })).toEqual({
+      minX: 88,
+      minY: 3,
+      maxX: 132,
+      maxY: 22,
+    })
+    expect(shapeBounds({ ...base, type: 'line', x: 0, y: 0, points: [5, 5, 1, 9] })).toEqual({
+      minX: -1,
+      minY: 3,
+      maxX: 7,
+      maxY: 11,
+    })
+  })
+
+  it('estimates text from the font size and lines', () => {
+    expect(shapeBounds({ ...base, type: 'text', x: 0, y: 0, text: 'ab\nabcd', fontSize: 10 })).toEqual({
+      minX: 0,
+      minY: 0,
+      maxX: 24,
+      maxY: 20,
+    })
+  })
+
+  it('joins all shapes, and is null for an empty board', () => {
+    expect(contentBounds([])).toBeNull()
+    expect(
+      contentBounds([
+        { ...base, strokeWidth: 0, type: 'rect', x: 0, y: 0, width: 10, height: 10 },
+        { ...base, strokeWidth: 0, type: 'rect', x: 50, y: -5, width: 10, height: 10 },
+      ]),
+    ).toEqual({ minX: 0, minY: -5, maxX: 60, maxY: 10 })
   })
 })

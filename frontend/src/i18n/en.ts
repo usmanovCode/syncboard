@@ -155,6 +155,12 @@ export const en = {
     redo: 'Redo',
     textLabel: 'Text',
     textPlaceholder: 'Type, then press Enter',
+    zoom: {
+      controls: 'Zoom',
+      percent: '{{value}}%',
+      reset: 'Reset zoom to 100% (Ctrl+0)',
+      fit: 'Fit to content',
+    },
     status: {
       saved: 'All changes saved',
       saving: 'Saving…',

@@ -13,6 +13,7 @@ type Props = Record<string, unknown> & { children?: ReactNode }
 // Test-only module: fast refresh does not apply.
 // oxlint-disable-next-line react/only-export-components
 export const konvaState = {
+  /** The pointer in screen pixels, relative to the stage (Stage.getPointerPosition). */
   pointer: { x: 0, y: 0 },
   /** id of the shape under the pointer, for the eraser (Stage.getIntersection). */
   hit: null as string | null,
@@ -46,6 +47,10 @@ export const Stage = forwardRef<typeof fakeStage, Props>(function Stage(props, r
   return (
     <div
       data-testid="stage"
+      // The viewport (pan/zoom) the stage is drawn with: screen = world × scale + (x, y).
+      data-x={(props.x as number | undefined) ?? 0}
+      data-y={(props.y as number | undefined) ?? 0}
+      data-scale={(props.scaleX as number | undefined) ?? 1}
       onPointerDown={handler('onPointerDown')}
       onPointerMove={handler('onPointerMove')}
       onPointerUp={handler('onPointerUp')}

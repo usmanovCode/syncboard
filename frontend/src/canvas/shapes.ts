@@ -1,3 +1,4 @@
+import type { Bounds } from './viewport'
 import {
   SCHEMA_VERSION,
   type CanvasContent,
@@ -154,4 +155,59 @@ export function parseCanvasContent(raw: unknown): Shape[] {
   if (typeof raw !== 'object' || raw === null) return []
   const shapes = (raw as { shapes?: unknown }).shapes
   return Array.isArray(shapes) ? shapes.filter(isShape) : []
+}
+
+/**
+ * The box a shape covers in board coordinates, including half its stroke. Text is estimated from
+ * the font size (no measuring in plain code); good enough for "fit to content".
+ */
+export function shapeBounds(shape: Shape): Bounds {
+  const pad = shape.strokeWidth / 2
+  let minX: number, minY: number, maxX: number, maxY: number
+  switch (shape.type) {
+    case 'pen':
+    case 'line': {
+      const xs = shape.points.filter((_, i) => i % 2 === 0)
+      const ys = shape.points.filter((_, i) => i % 2 === 1)
+      minX = shape.x + Math.min(...xs)
+      maxX = shape.x + Math.max(...xs)
+      minY = shape.y + Math.min(...ys)
+      maxY = shape.y + Math.max(...ys)
+      break
+    }
+    case 'rect':
+      minX = Math.min(shape.x, shape.x + shape.width)
+      maxX = Math.max(shape.x, shape.x + shape.width)
+      minY = Math.min(shape.y, shape.y + shape.height)
+      maxY = Math.max(shape.y, shape.y + shape.height)
+      break
+    case 'ellipse':
+      minX = shape.x - shape.radiusX
+      maxX = shape.x + shape.radiusX
+      minY = shape.y - shape.radiusY
+      maxY = shape.y + shape.radiusY
+      break
+    case 'text': {
+      const lines = shape.text.split('\n')
+      const longest = Math.max(...lines.map((line) => line.length))
+      return {
+        minX: shape.x,
+        minY: shape.y,
+        maxX: shape.x + longest * shape.fontSize * 0.6,
+        maxY: shape.y + lines.length * shape.fontSize,
+      }
+    }
+  }
+  return { minX: minX - pad, minY: minY - pad, maxX: maxX + pad, maxY: maxY + pad }
+}
+
+/** The box around all shapes, or null for an empty board. */
+export function contentBounds(shapes: Shape[]): Bounds | null {
+  if (shapes.length === 0) return null
+  return shapes.map(shapeBounds).reduce((a, b) => ({
+    minX: Math.min(a.minX, b.minX),
+    minY: Math.min(a.minY, b.minY),
+    maxX: Math.max(a.maxX, b.maxX),
+    maxY: Math.max(a.maxY, b.maxY),
+  }))
 }

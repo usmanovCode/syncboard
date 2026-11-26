@@ -87,6 +87,11 @@ npm run build                               # tsc -b && vite build
   - A `seq` gap triggers a re-join.
   - After every (re)join, pending ops are re-sent; this is safe because ops are idempotent.
   - The REST `GET /api/boards/{id}` content is only for the first paint. **There is no REST write for the drawing.**
+- **Viewport (pan/zoom, `canvas/viewport.ts`, pure):** shapes, ops and cursors are always in **board (world) coordinates**. Only `CanvasStage` converts, with `screen = world × scale + (x, y)` applied as the Konva `Stage` transform.
+  - **Converting:** use `toWorld` / `toScreen`; never send screen pixels. Konva's `getIntersection` (eraser) is the one place that takes screen pixels. Other people's cursors are placed with `toScreen` (`overlay` is a render function that receives the viewport).
+  - **Input:** Ctrl/⌘+wheel and trackpad pinch zoom around the pointer, 10%–400% (Safari pinch arrives as `gesturechange`). The plain wheel or a two-finger scroll pans, and so do Space+drag and middle-button drag. The wheel listener is native with `passive: false`, so it can stop the browser's page zoom. Space is ignored while typing (`canvas/keyboard.ts` `isTypingTarget`).
+  - **Controls:** `ZoomControls` sits bottom-right. Clicking the percentage (or Ctrl+0) goes back to 100%; "Fit to content" never goes past 100%. Viewers can pan and zoom too.
+  - **Not saved:** the viewport lives in component state only and resets to 100% at the origin on reload.
 - **Undo:** per user (`canvas/localHistory.ts`). It records the inverse op of each of my changes, never reverts others' work, and skips steps that no longer apply.
 - **Frontend layout:**
   - `CanvasStage.tsx` is the only place that touches react-konva.

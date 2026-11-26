@@ -159,6 +159,12 @@ export const ko: Translations<typeof en> = {
     redo: '다시 실행',
     textLabel: '텍스트',
     textPlaceholder: '입력 후 Enter를 누르세요',
+    zoom: {
+      controls: '확대/축소',
+      percent: '{{value}}%',
+      reset: '100%로 되돌리기 (Ctrl+0)',
+      fit: '내용에 맞추기',
+    },
     status: {
       saved: '모든 변경 사항이 저장됨',
       saving: '저장 중…',

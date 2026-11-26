@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -690,6 +690,255 @@ describe('BoardPage', () => {
       fireEvent.pointerMove(stage())
 
       expect(sentCursors()).toEqual([{ x: 5, y: 6 }])
+    })
+  })
+
+  describe('pan and zoom', () => {
+    const region = () => screen.getByRole('region', { name: 'Drawing canvas' })
+    const view = () => ({
+      x: Number(stage().dataset.x),
+      y: Number(stage().dataset.y),
+      scale: Number(stage().dataset.scale),
+    })
+    const zoomButton = () => within(screen.getByRole('group', { name: 'Zoom' })).getByRole('button', { name: /%/ })
+    const wheel = (init: WheelEventInit) => fireEvent.wheel(region(), { clientX: 0, clientY: 0, ...init })
+    const zoomIn = (times = 1, at = { clientX: 0, clientY: 0 }) => {
+      for (let i = 0; i < times; i++) wheel({ ctrlKey: true, deltaY: -100, ...at })
+    }
+    const sentCursors = () => socketState.sent.filter((s) => s.path === 'cursor').map((s) => s.body)
+    const press = (code: string) => fireEvent.keyDown(document.body, { code, key: code === 'Space' ? ' ' : code })
+    const release = (code: string) => fireEvent.keyUp(document.body, { code, key: code === 'Space' ? ' ' : code })
+
+    /** jsdom has no layout: report an 800×600 canvas so "fit" and "reset" have a screen to work with. */
+    function measuredCanvas() {
+      vi.stubGlobal(
+        'ResizeObserver',
+        class {
+          callback: ResizeObserverCallback
+          constructor(callback: ResizeObserverCallback) {
+            this.callback = callback
+          }
+          observe() {
+            this.callback([{ contentRect: { width: 800, height: 600 } } as ResizeObserverEntry], this as never)
+          }
+          disconnect() {}
+        },
+      )
+    }
+
+    it('starts at 100% and zooms with Ctrl+wheel around the pointer', async () => {
+      fakeBackend()
+      await openBoard()
+      expect(zoomButton()).toHaveTextContent('100%')
+
+      zoomIn(1, { clientX: 200, clientY: 100 })
+
+      expect(zoomButton()).toHaveTextContent('111%')
+      const v = view()
+      // The board point under the pointer didn't move.
+      expect((200 - v.x) / v.scale).toBeCloseTo(200)
+      expect((100 - v.y) / v.scale).toBeCloseTo(100)
+
+      wheel({ ctrlKey: true, deltaY: 100, clientX: 200, clientY: 100 })
+      expect(zoomButton()).toHaveTextContent('100%')
+    })
+
+    it('stays between 10% and 400%, also for trackpad pinches', async () => {
+      fakeBackend()
+      await openBoard()
+
+      zoomIn(40)
+      expect(zoomButton()).toHaveTextContent('400%')
+
+      for (let i = 0; i < 300; i++) wheel({ ctrlKey: true, deltaY: 4 }) // a pinch: many small deltas
+      expect(zoomButton()).toHaveTextContent('10%')
+    })
+
+    it('pans with the plain wheel or a two-finger scroll', async () => {
+      fakeBackend()
+      await openBoard()
+
+      wheel({ deltaX: 30, deltaY: 50 })
+
+      expect(view()).toEqual({ x: -30, y: -50, scale: 1 })
+    })
+
+    it('draws in board coordinates whatever the zoom and pan', async () => {
+      fakeBackend()
+      await openBoard()
+      zoomIn(3, { clientX: 50, clientY: 50 })
+      wheel({ deltaX: -20, deltaY: 10 })
+      const v = view()
+      const world = (sx: number, sy: number) => ({
+        x: Math.round(((sx - v.x) / v.scale) * 10) / 10,
+        y: Math.round(((sy - v.y) / v.scale) * 10) / 10,
+      })
+
+      await userEvent.click(tool(/Rectangle/))
+      dragOnStage([100, 100], [300, 200])
+
+      const op = sentOps()[0]
+      expect(op.type).toBe('add')
+      const from = world(100, 100)
+      const to = world(300, 200)
+      expect(op.type === 'add' && op.shape).toMatchObject({
+        type: 'rect',
+        x: from.x,
+        y: from.y,
+        width: expect.closeTo(to.x - from.x, 0),
+        height: expect.closeTo(to.y - from.y, 0),
+      })
+    })
+
+    it('places the text box on screen, but the text on the board', async () => {
+      fakeBackend()
+      await openBoard()
+      wheel({ deltaX: -100, deltaY: -40 }) // the board moved right and down
+
+      await userEvent.click(tool(/Text/))
+      konvaState.pointer = { x: 150, y: 90 }
+      fireEvent.pointerDown(stage())
+      const box = screen.getByRole('textbox', { name: 'Text' })
+      expect(box).toHaveStyle({ left: '150px', top: '90px' })
+      await userEvent.type(box, 'Salom{Enter}')
+
+      const op = sentOps()[0]
+      expect(op.type === 'add' && op.shape).toMatchObject({ type: 'text', x: 50, y: 50, text: 'Salom' })
+    })
+
+    it('pans with Space + drag, without drawing or picking up shapes', async () => {
+      fakeBackend()
+      await openBoard()
+
+      press('Space')
+      expect(region()).toHaveStyle({ cursor: 'grab' })
+      dragOnStage([100, 100], [150, 130])
+
+      expect(view()).toEqual({ x: 50, y: 30, scale: 1 })
+      expect(sentOps()).toEqual([])
+      expect(shapes()).toHaveLength(1)
+
+      await userEvent.click(tool(/Select/))
+      expect(konvaState.props.get('r1')?.draggable).toBe(false)
+      release('Space')
+      expect(konvaState.props.get('r1')?.draggable).toBe(true)
+      expect(region()).toHaveStyle({ cursor: 'default' })
+    })
+
+    it('pans with the middle mouse button', async () => {
+      fakeBackend()
+      await openBoard()
+
+      konvaState.pointer = { x: 10, y: 10 }
+      fireEvent.pointerDown(stage(), { button: 1 })
+      expect(region()).toHaveStyle({ cursor: 'grabbing' })
+      konvaState.pointer = { x: 70, y: -10 }
+      fireEvent.pointerMove(stage())
+      fireEvent.pointerUp(stage())
+
+      expect(view()).toEqual({ x: 60, y: -20, scale: 1 })
+      expect(sentOps()).toEqual([])
+    })
+
+    it('leaves Space alone while typing a chat message', async () => {
+      fakeBackend()
+      await openBoard()
+
+      const chat = screen.getByRole('textbox', { name: 'Message' })
+      await userEvent.type(chat, 'a b')
+      expect(chat).toHaveValue('a b')
+
+      dragOnStage([10, 10], [60, 60]) // the pen still draws
+      expect(sentOps()).toHaveLength(1)
+      expect(view()).toEqual({ x: 0, y: 0, scale: 1 })
+    })
+
+    it('stops panning mode when the window loses focus', async () => {
+      fakeBackend()
+      await openBoard()
+
+      press('Space')
+      fireEvent.blur(window)
+      dragOnStage([10, 10], [60, 60])
+
+      expect(sentOps()).toHaveLength(1)
+    })
+
+    it('sends my pointer in board coordinates and shows others through my viewport', async () => {
+      fakeBackend()
+      await openBoard({ join: false })
+      const vali: OnlineUser = { userId: 2, name: 'Vali', color: '#2563eb', role: 'VIEWER' }
+      act(() => socketState.join({ userId: 1, online: [vali], shapes: [EXISTING], seq: SEQ }))
+      wheel({ deltaX: -100, deltaY: 0, clientX: 300, clientY: 300 }) // board moves 100 px right
+
+      expect(sentCursors().at(-1)).toEqual({ x: 200, y: 300 }) // the board moved under a still pointer
+      konvaState.pointer = { x: 150, y: 50 }
+      fireEvent.pointerMove(stage())
+      await waitFor(() => expect(sentCursors().at(-1)).toEqual({ x: 50, y: 50 })) // after the send throttle
+
+      act(() => socketState.require().onCursor({ cursorId: 'tab-a', userId: 2, x: 10, y: 20 }))
+      const cursor = screen.getByTestId('cursor')
+      expect(cursor).toHaveStyle({ transform: 'translate(110px, 20px)' })
+
+      zoomIn(1)
+      const v = view()
+      expect(cursor).toHaveStyle({ transform: `translate(${10 * v.scale + v.x}px, ${20 * v.scale + v.y}px)` })
+    })
+
+    it('goes back to 100% with the button or Ctrl+0', async () => {
+      measuredCanvas()
+      fakeBackend()
+      await openBoard()
+
+      zoomIn(5)
+      await userEvent.click(zoomButton())
+      expect(zoomButton()).toHaveTextContent('100%')
+
+      zoomIn(5)
+      press('0')
+      expect(zoomButton()).not.toHaveTextContent('100%') // Ctrl is needed
+      fireEvent.keyDown(document.body, { key: '0', ctrlKey: true })
+      expect(zoomButton()).toHaveTextContent('100%')
+    })
+
+    it('fits the drawing on screen, without zooming in past 100%', async () => {
+      measuredCanvas()
+      fakeBackend()
+      await openBoard()
+      wheel({ deltaX: 500, deltaY: 500 })
+      zoomIn(5)
+
+      await userEvent.click(screen.getByRole('button', { name: 'Fit to content' }))
+
+      // EXISTING is a 40×30 rectangle at (10, 10) with a 4 px stroke: centered on the 800×600 canvas.
+      expect(view()).toEqual({ x: 370, y: 275, scale: 1 })
+
+      act(() => socketState.join({ shapes: [], seq: SEQ }))
+      wheel({ deltaX: 50, deltaY: 50 })
+      await userEvent.click(screen.getByRole('button', { name: 'Fit to content' }))
+      expect(view()).toEqual({ x: 0, y: 0, scale: 1 }) // an empty board: back to the start
+    })
+
+    it('lets viewers pan and zoom', async () => {
+      fakeBackend({ role: 'VIEWER' })
+      await openBoard()
+
+      zoomIn(1)
+      expect(zoomButton()).toHaveTextContent('111%')
+      press('Space')
+      dragOnStage([0, 0], [20, 10])
+      release('Space')
+      expect(view().x).toBeCloseTo(20)
+    })
+
+    it('is translated to Korean', async () => {
+      await setLanguage('ko')
+      fakeBackend()
+      await openBoard()
+
+      expect(screen.getByRole('group', { name: '확대/축소' })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: '내용에 맞추기' })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: /100%로 되돌리기/ })).toBeInTheDocument()
     })
   })
 

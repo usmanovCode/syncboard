@@ -2,12 +2,35 @@ import type Konva from 'konva'
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Ellipse, Layer, Line, Rect, Stage, Text, Transformer } from 'react-konva'
-import { createText, dragShape, isDegenerate, moveShapeTo, newShapeId, startShape, textFontSize } from './shapes'
+import { isTypingTarget } from './keyboard'
+import {
+  contentBounds,
+  createText,
+  dragShape,
+  isDegenerate,
+  moveShapeTo,
+  newShapeId,
+  startShape,
+  textFontSize,
+} from './shapes'
 import type { Point, Shape, ShapeStyle, Tool } from './types'
+import {
+  INITIAL_VIEWPORT,
+  fitToContent,
+  panBy,
+  toScreen,
+  toWorld,
+  wheelPixels,
+  wheelZoomFactor,
+  zoomAt,
+  zoomTo,
+  type Viewport,
+} from './viewport'
+import { ZoomControls } from './ZoomControls'
 
 type Props = {
   shapes: Shape[]
-  /** Viewers: nothing can be drawn, selected or moved. */
+  /** Viewers: nothing can be drawn, selected or moved (they can still pan and zoom). */
   readOnly?: boolean
   tool: Tool
   style: ShapeStyle
@@ -16,10 +39,10 @@ type Props = {
   onAdd: (shape: Shape) => void
   onUpdate: (id: string, update: (shape: Shape) => Shape) => void
   onRemove: (id: string) => void
-  /** The pointer position over the canvas (any tool, also read-only); null when it leaves. */
+  /** The pointer position on the board (any tool, also read-only), in board coordinates; null when it leaves. */
   onPointerPosition?: (p: Point | null) => void
   /** Drawn above the canvas, e.g. other people's cursors; must not take pointer events. */
-  overlay?: ReactNode
+  overlay?: (view: Viewport) => ReactNode
 }
 
 type KonvaPointerEvent = Konva.KonvaEventObject<PointerEvent>
@@ -27,7 +50,10 @@ type KonvaPointerEvent = Konva.KonvaEventObject<PointerEvent>
 /** Text being typed: a new text at a point, or an existing text shape (id) being edited. */
 type TextEdit = { point: Point; value: string; id?: string }
 
-/** Thin strokes are hard to hit with the eraser or select tool; widen their hit area. */
+/** Safari's trackpad pinch (other browsers send Ctrl+wheel). */
+type GestureEvent = UIEvent & { scale: number; clientX: number; clientY: number }
+
+/** Thin strokes are hard to hit with the eraser or select tool; widen their hit area (screen pixels). */
 const MIN_HIT_WIDTH = 14
 
 function useElementSize(ref: RefObject<HTMLElement | null>) {
@@ -54,6 +80,11 @@ const CURSORS: Record<Tool, string> = {
   eraser: 'cell',
 }
 
+/**
+ * The drawing, with pan and zoom. Everything handed in and out (shapes, pointer positions) is in board
+ * coordinates; the viewport only changes how it is drawn. Zoom: Ctrl+wheel or a trackpad pinch,
+ * around the pointer. Pan: Space+drag, middle-button drag, or the plain wheel / two-finger scroll.
+ */
 export function CanvasStage({
   shapes,
   readOnly = false,
@@ -74,6 +105,28 @@ export function CanvasStage({
   const stageRef = useRef<Konva.Stage>(null)
   const transformerRef = useRef<Konva.Transformer>(null)
   const size = useElementSize(containerRef)
+
+  // The viewport, mirrored in a ref for the native event listeners and pointer conversions.
+  const [view, setViewState] = useState<Viewport>(INITIAL_VIEWPORT)
+  const viewRef = useRef(view)
+  const setView = (next: Viewport) => {
+    viewRef.current = next
+    setViewState(next)
+  }
+  const onPointerPositionRef = useRef(onPointerPosition)
+  useEffect(() => {
+    onPointerPositionRef.current = onPointerPosition
+  }, [onPointerPosition])
+
+  // Space held: the next drag pans instead of drawing.
+  const [spaceHeld, setSpaceHeldState] = useState(false)
+  const spaceRef = useRef(false)
+  const setSpaceHeld = (held: boolean) => {
+    spaceRef.current = held
+    setSpaceHeldState(held)
+  }
+  const pan = useRef<{ start: Point; view: Viewport } | null>(null)
+  const [panning, setPanning] = useState(false)
 
   // The shape being drawn. Kept out of history until the pointer is released.
   const [draft, setDraft] = useState<Shape | null>(null)
@@ -97,10 +150,89 @@ export function CanvasStage({
     transformer.nodes(node ? [node] : [])
   }, [selectedId, tool, shapes])
 
-  const pointer = (): Point | null => stageRef.current?.getPointerPosition() ?? null
+  // Wheel and pinch. Native listeners: React's wheel listener is passive, so it can't stop the
+  // browser from zooming the whole page on Ctrl+wheel.
+  useEffect(() => {
+    const element = containerRef.current
+    if (!element) return
+    const local = (e: { clientX: number; clientY: number }): Point => {
+      const rect = element.getBoundingClientRect()
+      return { x: e.clientX - rect.left, y: e.clientY - rect.top }
+    }
+    function onWheel(e: WheelEvent) {
+      e.preventDefault()
+      const at = local(e)
+      const delta = wheelPixels(e)
+      if (e.ctrlKey || e.metaKey) {
+        setView(zoomAt(viewRef.current, at, wheelZoomFactor(delta.y)))
+      } else {
+        setView(panBy(viewRef.current, -delta.x, -delta.y))
+        // The board moved under a still pointer: tell the others where it now is.
+        onPointerPositionRef.current?.(toWorld(viewRef.current, at))
+      }
+    }
+    let gestureScale = 1
+    function onGestureStart(e: Event) {
+      e.preventDefault()
+      gestureScale = 1
+    }
+    function onGestureChange(e: Event) {
+      e.preventDefault()
+      const gesture = e as GestureEvent
+      setView(zoomAt(viewRef.current, local(gesture), gesture.scale / gestureScale))
+      gestureScale = gesture.scale
+    }
+    element.addEventListener('wheel', onWheel, { passive: false })
+    element.addEventListener('gesturestart', onGestureStart)
+    element.addEventListener('gesturechange', onGestureChange)
+    return () => {
+      element.removeEventListener('wheel', onWheel)
+      element.removeEventListener('gesturestart', onGestureStart)
+      element.removeEventListener('gesturechange', onGestureChange)
+    }
+  }, [])
+
+  // Space for panning and Ctrl+0 for 100%, for viewers too.
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if ((e.ctrlKey || e.metaKey) && e.key === '0') {
+        e.preventDefault() // instead of the browser's page zoom reset
+        setView(zoomTo(viewRef.current, size, 1))
+        return
+      }
+      if (e.code === 'Space' && !isTypingTarget(e.target)) {
+        e.preventDefault() // no page scroll, no button press
+        if (!spaceRef.current) setSpaceHeld(true)
+      }
+    }
+    function onKeyUp(e: KeyboardEvent) {
+      if (e.code === 'Space' && spaceRef.current) {
+        e.preventDefault()
+        setSpaceHeld(false)
+      }
+    }
+    // Released while the window wasn't focused: don't stay in pan mode.
+    const onBlur = () => setSpaceHeld(false)
+    window.addEventListener('keydown', onKeyDown)
+    window.addEventListener('keyup', onKeyUp)
+    window.addEventListener('blur', onBlur)
+    return () => {
+      window.removeEventListener('keydown', onKeyDown)
+      window.removeEventListener('keyup', onKeyUp)
+      window.removeEventListener('blur', onBlur)
+    }
+  }, [size])
+
+  /** The pointer in screen pixels (relative to the canvas), as Konva reports it. */
+  const screenPointer = (): Point | null => stageRef.current?.getPointerPosition() ?? null
+  /** The pointer on the board. */
+  const pointer = (): Point | null => {
+    const p = screenPointer()
+    return p ? toWorld(viewRef.current, p) : null
+  }
 
   function eraseAtPointer() {
-    const p = pointer()
+    const p = screenPointer() // Konva hit-tests in screen pixels
     const id = p ? stageRef.current?.getIntersection(p)?.id() : undefined
     if (id) onRemove(id)
   }
@@ -120,8 +252,14 @@ export function CanvasStage({
   }
 
   function handlePointerDown(event: KonvaPointerEvent) {
-    const p = pointer()
-    if (!p) return
+    const screen = screenPointer()
+    if (!screen) return
+    if (event.evt.button === 1 || spaceRef.current) {
+      pan.current = { start: screen, view: viewRef.current }
+      setPanning(true)
+      return
+    }
+    const p = toWorld(viewRef.current, screen)
     if (textEditRef.current || textEdit) {
       // Clicking elsewhere finishes the text being typed (like blur), without starting something new.
       commitText()
@@ -145,25 +283,41 @@ export function CanvasStage({
   }
 
   function handlePointerMove(event: KonvaPointerEvent) {
-    const position = pointer()
-    if (position) onPointerPosition?.(position)
+    const screen = screenPointer()
+    if (pan.current) {
+      // The board point under the pointer stays the same while panning: no cursor update needed.
+      if (screen) {
+        const { start, view: from } = pan.current
+        setView(panBy(from, screen.x - start.x, screen.y - start.y))
+      }
+      return
+    }
+    const p = pointer()
+    if (p) onPointerPosition?.(p)
     if (erasing.current) {
       eraseAtPointer()
       return
     }
     const start = dragStart.current
-    const p = pointer()
     if (!start || !p) return
     const constrain = 'shiftKey' in event.evt && event.evt.shiftKey
     setDraft((current) => (current ? dragShape(current, start, p, constrain) : current))
   }
 
   function finishPointer() {
+    if (pan.current) {
+      pan.current = null
+      setPanning(false)
+      return
+    }
     erasing.current = false
     dragStart.current = null
     if (draft && !isDegenerate(draft)) onAdd(draft)
     setDraft(null)
   }
+
+  // Shapes can't be picked up while Space is held: that drag pans.
+  const canSelect = tool === 'select' && !readOnly && !spaceHeld
 
   function renderShape(shape: Shape, isDraft = false) {
     const common = {
@@ -172,10 +326,14 @@ export function CanvasStage({
       y: shape.y,
       stroke: shape.stroke,
       strokeWidth: shape.strokeWidth,
-      hitStrokeWidth: Math.max(shape.strokeWidth, MIN_HIT_WIDTH),
+      hitStrokeWidth: Math.max(shape.strokeWidth, MIN_HIT_WIDTH / view.scale),
       listening: !isDraft,
-      draggable: tool === 'select' && !isDraft && !readOnly,
-      onPointerDown: tool === 'select' && !readOnly ? () => onSelect(shape.id) : undefined,
+      draggable: canSelect && !isDraft,
+      onPointerDown: canSelect
+        ? (event: KonvaPointerEvent) => {
+            if (event.evt?.button !== 1) onSelect(shape.id)
+          }
+        : undefined,
       onDragEnd: (event: Konva.KonvaEventObject<DragEvent>) =>
         onUpdate(shape.id, (s) => moveShapeTo(s, event.target.x(), event.target.y())),
     }
@@ -212,6 +370,7 @@ export function CanvasStage({
   const editingShape = textEdit?.id ? shapes.find((s) => s.id === textEdit.id) : undefined
   const editFontSize = editingShape?.type === 'text' ? editingShape.fontSize : textFontSize(style.strokeWidth)
   const textColor = editingShape?.stroke ?? style.stroke
+  const textAt = textEdit ? toScreen(view, textEdit.point) : null
 
   return (
     <div
@@ -219,12 +378,20 @@ export function CanvasStage({
       role="region"
       aria-label={t('board.canvas')}
       className="relative min-h-0 flex-1 overflow-hidden bg-white"
-      style={{ cursor: CURSORS[tool] }}
+      style={{ cursor: panning ? 'grabbing' : spaceHeld ? 'grab' : CURSORS[tool] }}
+      // The middle button pans; don't let the browser start auto-scrolling.
+      onMouseDown={(e) => {
+        if (e.button === 1) e.preventDefault()
+      }}
     >
       <Stage
         ref={stageRef}
         width={size.width}
         height={size.height}
+        x={view.x}
+        y={view.y}
+        scaleX={view.scale}
+        scaleY={view.scale}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={finishPointer}
@@ -240,9 +407,9 @@ export function CanvasStage({
         </Layer>
       </Stage>
 
-      {overlay}
+      {overlay?.(view)}
 
-      {textEdit && (
+      {textEdit && textAt && (
         <textarea
           aria-label={t('board.textLabel')}
           placeholder={t('board.textPlaceholder')}
@@ -261,14 +428,20 @@ export function CanvasStage({
           rows={Math.max(1, textEdit.value.split('\n').length)}
           className="absolute min-w-48 resize-none border border-dashed border-indigo-400 bg-transparent p-0 leading-none outline-none"
           style={{
-            left: textEdit.point.x,
-            top: textEdit.point.y,
-            fontSize: editFontSize,
+            left: textAt.x,
+            top: textAt.y,
+            fontSize: editFontSize * view.scale,
             color: textColor,
             fontFamily: 'system-ui, sans-serif',
           }}
         />
       )}
+
+      <ZoomControls
+        scale={view.scale}
+        onReset={() => setView(zoomTo(view, size, 1))}
+        onFit={() => setView(fitToContent(contentBounds(shapes), size))}
+      />
     </div>
   )
 }

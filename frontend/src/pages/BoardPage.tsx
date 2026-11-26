@@ -6,6 +6,7 @@ import { ApiError } from '../api/client'
 import { useAuth } from '../auth/authContext'
 import { CanvasStage } from '../canvas/CanvasStage'
 import { CursorLayer } from '../canvas/CursorLayer'
+import { isTypingTarget } from '../canvas/keyboard'
 import { emptyHistory, record, takeRedo, takeUndo, type LocalHistory } from '../canvas/localHistory'
 import { inverseOf, type BoardOp } from '../canvas/ops'
 import { parseCanvasContent, restyleShape } from '../canvas/shapes'
@@ -109,10 +110,6 @@ export function BoardPage() {
 const CHAT_OPEN_KEY = 'syncboard.chatOpen'
 
 const TOOL_BY_KEY = new Map(TOOLS.map(({ tool, key }) => [key.toLowerCase(), tool]))
-
-function isTypingTarget(target: EventTarget | null) {
-  return target instanceof HTMLElement && (target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName))
-}
 
 function BoardEditor({ board, shapes: initialShapes, version }: Loaded) {
   const { t } = useTranslation()
@@ -315,7 +312,7 @@ function BoardEditor({ board, shapes: initialShapes, version }: Loaded) {
           onUpdate={update}
           onRemove={remove}
           onPointerPosition={room.sendCursor}
-          overlay={<CursorLayer cursors={room.cursors} />}
+          overlay={(view) => <CursorLayer cursors={room.cursors} viewport={view} />}
         />
         {chatOpen && (
           <ChatPanel
