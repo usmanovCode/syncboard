@@ -1,7 +1,6 @@
 package com.syncboard.realtime;
 
 import com.syncboard.board.BoardRole;
-import com.syncboard.realtime.RealtimeDtos.OnlineUser;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -11,8 +10,9 @@ import java.util.Set;
 import org.springframework.stereotype.Component;
 
 /**
- * Who has which board open, per STOMP session. In memory, so it covers this backend instance only
- * (see {@link WebSocketConfig}). Methods are synchronized: traffic is small and correctness simple.
+ * Which board each STOMP session <em>of this instance</em> has joined, plus per-session rate limits. A
+ * session lives on one instance, so this stays in memory; the online lists across all instances are in
+ * Redis ({@link ClusterPresence}). Methods are synchronized: traffic is small and correctness simple.
  */
 @Component
 public class PresenceRegistry {
@@ -21,6 +21,10 @@ public class PresenceRegistry {
     static final List<String> COLORS = List.of(
             "#e11d48", "#d97706", "#16a34a", "#0891b2", "#2563eb",
             "#7c3aed", "#c026d3", "#db2777", "#059669", "#ea580c");
+
+    /** A session of this instance that has joined a board. */
+    public record LocalSession(String sessionId, long boardId, BoardPrincipal user, BoardRole role) {
+    }
 
     private record Entry(BoardPrincipal user, BoardRole role) {
     }
@@ -31,7 +35,7 @@ public class PresenceRegistry {
     /** "Typing" updates closer together than this are dropped (clients repeat it every few seconds). */
     static final long MIN_TYPING_INTERVAL_MS = 1000;
 
-    /** sessionId -> (boardId -> entry). Joining order is kept for a stable online list. */
+    /** sessionId -> (boardId -> entry). */
     private final Map<String, Map<Long, Entry>> sessions = new LinkedHashMap<>();
     private final Map<String, Long> lastCursorAt = new HashMap<>();
     private final Map<String, Long> lastTypingAt = new HashMap<>();
@@ -41,10 +45,9 @@ public class PresenceRegistry {
         return COLORS.get(Math.floorMod(Long.hashCode(userId * 0x9E3779B97F4A7C15L), COLORS.size()));
     }
 
-    /** Registers the session on the board and returns the board's online list. */
-    public synchronized List<OnlineUser> join(String sessionId, long boardId, BoardPrincipal user, BoardRole role) {
+    /** Records that the session has joined the board. */
+    public synchronized void join(String sessionId, long boardId, BoardPrincipal user, BoardRole role) {
         sessions.computeIfAbsent(sessionId, id -> new HashMap<>()).put(boardId, new Entry(user, role));
-        return online(boardId);
     }
 
     /** Removes the session everywhere and returns the boards it was on. */
@@ -94,27 +97,22 @@ public class PresenceRegistry {
 
     /**
      * Identifies one tab's cursor to other clients (a user with two tabs has two cursors). Derived from
-     * the session id so it is stable for the connection, without exposing the id itself.
+     * the session key ({@link RealtimeKeys#sessionKey}, unique across instances) so it is stable for the
+     * connection, without exposing the key itself.
      */
-    public static String cursorId(String sessionId) {
-        return Integer.toHexString(sessionId.hashCode());
+    public static String cursorId(String sessionKey) {
+        return Integer.toHexString(sessionKey.hashCode());
     }
 
     public synchronized boolean isJoined(String sessionId, long boardId) {
         return sessions.getOrDefault(sessionId, Map.of()).containsKey(boardId);
     }
 
-    /** Online users of a board, one entry per user even with several tabs open. */
-    public synchronized List<OnlineUser> online(long boardId) {
-        Map<Long, OnlineUser> byUser = new LinkedHashMap<>();
-        for (Map<Long, Entry> boards : sessions.values()) {
-            Entry entry = boards.get(boardId);
-            if (entry != null) {
-                long userId = entry.user().userId();
-                byUser.putIfAbsent(userId,
-                        new OnlineUser(userId, entry.user().fullName(), colorOf(userId), entry.role()));
-            }
-        }
-        return new ArrayList<>(byUser.values());
+    /** Every joined board of every session of this instance. */
+    public synchronized List<LocalSession> localSessions() {
+        List<LocalSession> out = new ArrayList<>();
+        sessions.forEach((sessionId, boards) -> boards.forEach(
+                (boardId, entry) -> out.add(new LocalSession(sessionId, boardId, entry.user(), entry.role()))));
+        return out;
     }
 }

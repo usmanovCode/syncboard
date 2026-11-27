@@ -1,10 +1,18 @@
-# Used by @ActiveProfiles("test"). Needs a separate, existing database (Flyway creates the tables):
+# Used by @ActiveProfiles("test"). Needs a running Redis and a separate, existing database (Flyway
+# creates the tables):
 #   createdb -U postgres syncboard_test
 spring:
   datasource:
     url: ${TEST_DB_URL:jdbc:postgresql://localhost:5432/syncboard_test}
+  data:
+    redis:
+      # Needs a running Redis (see backend/.env.example). Database 1 and a separate prefix keep test
+      # data and messages away from a dev app on the same server.
+      url: ${REDIS_TEST_URL:redis://localhost:6379/1}
 
 app:
   jwt:
     secret: test-secret-test-secret-test-secret-0123456789
     ttl: PT15M
+  realtime:
+    redis-prefix: syncboard-test

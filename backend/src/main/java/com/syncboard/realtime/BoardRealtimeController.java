@@ -10,7 +10,6 @@ import com.syncboard.realtime.RealtimeDtos.CursorRequest;
 import com.syncboard.realtime.RealtimeDtos.ErrorMessage;
 import com.syncboard.realtime.RealtimeDtos.JoinResponse;
 import com.syncboard.realtime.RealtimeDtos.OnlineUser;
-import com.syncboard.realtime.RealtimeDtos.OpBroadcast;
 import com.syncboard.realtime.RealtimeDtos.OpRequest;
 import com.syncboard.realtime.RealtimeDtos.TypingBroadcast;
 import com.syncboard.realtime.RealtimeDtos.TypingRequest;
@@ -42,6 +41,8 @@ import org.springframework.web.socket.messaging.SessionDisconnectEvent;
  *       (viewers too); messages are stored and broadcast, typing is only relayed,</li>
  *   <li>disconnects when leaving the page, which removes it from the online list.</li>
  * </ol>
+ * Everything for {@code /topic/...} goes through {@link RealtimeBus} (Redis Pub/Sub), so clients on other
+ * backend instances get it too; only rejections ({@code /user/queue/errors}) are sent locally.
  */
 @Controller
 public class BoardRealtimeController {
@@ -51,16 +52,23 @@ public class BoardRealtimeController {
 
     private final BoardAccessService access;
     private final PresenceRegistry presence;
+    private final ClusterPresence cluster;
     private final BoardRooms rooms;
     private final ChatService chat;
+    private final RealtimeBus bus;
+    private final RealtimeKeys keys;
     private final SimpMessagingTemplate messaging;
     private final MessageSource messages;
 
-    public BoardRealtimeController(BoardAccessService access, PresenceRegistry presence, BoardRooms rooms,
-            ChatService chat, SimpMessagingTemplate messaging, MessageSource messages) {
+    public BoardRealtimeController(BoardAccessService access, PresenceRegistry presence, ClusterPresence cluster,
+            BoardRooms rooms, ChatService chat, RealtimeBus bus, RealtimeKeys keys, SimpMessagingTemplate messaging,
+            MessageSource messages) {
         this.access = access;
         this.presence = presence;
+        this.cluster = cluster;
         this.rooms = rooms;
+        this.bus = bus;
+        this.keys = keys;
         this.chat = chat;
         this.messaging = messaging;
         this.messages = messages;
@@ -71,8 +79,8 @@ public class BoardRealtimeController {
         BoardPrincipal user = (BoardPrincipal) principal;
         BoardAccessService.Access a = access.requireView(user.userId(), boardId);
         BoardRooms.Snapshot snapshot = rooms.snapshot(boardId);
-        List<OnlineUser> online = presence.join(headers.getSessionId(), boardId, user, a.role());
-        broadcastPresence(boardId, online);
+        // Also broadcasts the new online list.
+        List<OnlineUser> online = cluster.join(headers.getSessionId(), boardId, user, a.role());
         return new JoinResponse(boardId, user.userId(), online, snapshot.shapes(), snapshot.seq(),
                 chat.latest(boardId));
     }
@@ -91,8 +99,7 @@ public class BoardRealtimeController {
             }
             // Re-checked on every op, so a role change or removal takes effect immediately.
             access.requireEdit(user.userId(), boardId);
-            rooms.apply(boardId, request.op(), (seq, op) -> messaging.convertAndSend(
-                    "/topic/boards/" + boardId + "/ops", new OpBroadcast(seq, user.userId(), clientOpId, op)));
+            rooms.apply(boardId, request.op(), user.userId(), clientOpId); // numbers and broadcasts it
         } catch (ApiException e) {
             sendError(user, ErrorMessage.forOp(e.getCode(), text(user, e.getMessageKey()), clientOpId));
         }
@@ -115,8 +122,8 @@ public class BoardRealtimeController {
             ChatMessageResponse message = chat.post(user.userId(), user.fullName(), boardId, clientMessageId,
                     request == null ? null : request.text());
             presence.stopTyping(headers.getSessionId());
-            messaging.convertAndSend("/topic/boards/" + boardId + "/chat", message);
-            messaging.convertAndSend(typingTopic(boardId), new TypingBroadcast(user.userId(), false));
+            bus.publish("/topic/boards/" + boardId + "/chat", message);
+            bus.publish(typingTopic(boardId), new TypingBroadcast(user.userId(), false));
         } catch (ApiException e) {
             sendError(user, ErrorMessage.forChat(e.getCode(), text(user, e.getMessageKey()), clientMessageId));
         }
@@ -140,7 +147,7 @@ public class BoardRealtimeController {
             }
             presence.stopTyping(sessionId);
         }
-        messaging.convertAndSend(typingTopic(boardId), new TypingBroadcast(user.userId(), typing));
+        bus.publish(typingTopic(boardId), new TypingBroadcast(user.userId(), typing));
     }
 
     /**
@@ -152,7 +159,7 @@ public class BoardRealtimeController {
             SimpMessageHeaderAccessor headers) {
         BoardPrincipal user = (BoardPrincipal) principal;
         String sessionId = headers.getSessionId();
-        String cursorId = PresenceRegistry.cursorId(sessionId);
+        String cursorId = PresenceRegistry.cursorId(keys.sessionKey(sessionId));
         boolean gone = request == null || Boolean.TRUE.equals(request.gone());
         CursorBroadcast cursor;
         if (gone) {
@@ -167,23 +174,14 @@ public class BoardRealtimeController {
         } else {
             return;
         }
-        messaging.convertAndSend("/topic/boards/" + boardId + "/cursors", cursor);
+        bus.publish("/topic/boards/" + boardId + "/cursors", cursor);
     }
 
+    /** Cursor gone, not typing, new online list; the last one out of a board writes the drawing back. */
     @EventListener
     public void onDisconnect(SessionDisconnectEvent event) {
-        String cursorId = PresenceRegistry.cursorId(event.getSessionId());
         long userId = event.getUser() instanceof BoardPrincipal user ? user.userId() : 0;
-        for (long boardId : presence.leaveAll(event.getSessionId())) {
-            messaging.convertAndSend("/topic/boards/" + boardId + "/cursors", CursorBroadcast.gone(cursorId, userId));
-            messaging.convertAndSend(typingTopic(boardId), new TypingBroadcast(userId, false));
-            List<OnlineUser> online = presence.online(boardId);
-            if (online.isEmpty()) {
-                rooms.close(boardId); // last one out: write the drawing back now
-            } else {
-                broadcastPresence(boardId, online);
-            }
-        }
+        cluster.leaveAll(event.getSessionId(), userId);
     }
 
     @MessageExceptionHandler(ApiException.class)
@@ -215,9 +213,5 @@ public class BoardRealtimeController {
 
     private static boolean isCoordinate(double value) {
         return Double.isFinite(value) && Math.abs(value) <= MAX_COORDINATE;
-    }
-
-    private void broadcastPresence(long boardId, List<OnlineUser> online) {
-        messaging.convertAndSend("/topic/boards/" + boardId + "/presence", online);
     }
 }

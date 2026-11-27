@@ -29,8 +29,12 @@ public final class RealtimeDtos {
     public record OpRequest(String clientOpId, BoardOp op) {
     }
 
-    /** Server → {@code /topic/boards/{id}/ops}: an accepted op, in seq order, sent to everyone (sender too). */
-    public record OpBroadcast(long seq, long userId, String clientOpId, BoardOp op) {
+    /**
+     * Server → {@code /topic/boards/{id}/ops}: an accepted op, in seq order, sent to everyone (sender too).
+     * On the wire it also has {@code seq} (first), which the Redis script that numbers the op adds
+     * ({@link RedisScripts#APPLY}): {@code { seq, userId, clientOpId, op }}.
+     */
+    public record OpBroadcast(long userId, String clientOpId, BoardOp op) {
     }
 
     /**
