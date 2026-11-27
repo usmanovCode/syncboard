@@ -5,6 +5,7 @@ import { CHAT_MAX_LENGTH, type ChatMessage } from '../chat/types'
 import { currentLanguage } from '../i18n'
 import { formatMessageTime } from '../i18n/format'
 import type { OnlineUser } from '../realtime/types'
+import { ChatIcon } from './icons'
 
 /** A new author line when the author changes or after this long. */
 const GROUP_GAP_MS = 5 * 60 * 1000
@@ -76,16 +77,19 @@ export function ChatPanel(props: ChatPanelProps) {
   const language = currentLanguage()
 
   return (
-    <aside aria-labelledby="chat-title" className="flex w-80 shrink-0 flex-col border-l border-slate-200 bg-white">
-      <div className="flex items-center justify-between border-b border-slate-200 px-4 py-2">
-        <h2 id="chat-title" className="text-sm font-semibold text-slate-900">
+    <aside aria-labelledby="chat-title" className="card flex w-80 shrink-0 flex-col overflow-hidden">
+      <div className="flex items-center justify-between border-b border-slate-100 bg-linear-to-r from-blue-50 to-violet-50 px-4 py-3">
+        <h2 id="chat-title" className="flex items-center gap-2 text-sm font-bold text-slate-900">
+          <span aria-hidden="true" className="flex h-7 w-7 items-center justify-center rounded-lg bg-white text-blue-600 shadow-sm">
+            <ChatIcon />
+          </span>
           {t('chat.title')}
         </h2>
         <button
           onClick={onClose}
           aria-label={t('chat.close')}
           title={t('chat.close')}
-          className="rounded p-1 text-slate-500 hover:bg-slate-100 hover:text-slate-700"
+          className="rounded-lg px-2 py-1 text-slate-500 hover:bg-white hover:text-slate-700"
         >
           ✕
         </button>
@@ -106,7 +110,7 @@ export function ChatPanel(props: ChatPanelProps) {
             <button
               onClick={loadOlder}
               disabled={older === 'loading'}
-              className="text-xs font-medium text-indigo-600 hover:text-indigo-500 disabled:text-slate-400"
+              className="rounded-full bg-slate-50 px-3 py-1 text-xs font-medium text-blue-600 hover:bg-violet-50 hover:text-violet-700 disabled:text-slate-400"
             >
               {older === 'loading' ? t('chat.loadingOlder') : t('chat.loadOlder')}
             </button>
@@ -129,9 +133,9 @@ export function ChatPanel(props: ChatPanelProps) {
               Date.parse(m.createdAt) - Date.parse(previous.createdAt) > GROUP_GAP_MS
             const mine = m.userId === selfId
             return (
-              <li key={m.id} className={startsGroup && i > 0 ? 'pt-2' : undefined}>
+              <li key={m.id} className={`flex flex-col ${mine ? 'items-end' : 'items-start'} ${startsGroup && i > 0 ? 'pt-2' : ''}`}>
                 {startsGroup && (
-                  <div className="flex items-baseline gap-2">
+                  <div className="mb-0.5 flex items-baseline gap-2 px-1">
                     <span className="text-xs font-semibold" style={{ color: m.color }}>
                       {mine ? t('chat.you') : m.userName}
                     </span>
@@ -140,17 +144,23 @@ export function ChatPanel(props: ChatPanelProps) {
                     </time>
                   </div>
                 )}
-                <p className={`whitespace-pre-wrap break-words text-sm ${mine ? 'text-slate-900' : 'text-slate-700'}`}>
+                <p
+                  className={`max-w-[85%] whitespace-pre-wrap break-words rounded-2xl px-3 py-1.5 text-sm ${
+                    mine ? 'bg-brand rounded-br-md text-white' : 'rounded-bl-md bg-slate-100 text-slate-800'
+                  }`}
+                >
                   {m.text}
                 </p>
               </li>
             )
           })}
           {pending.map((p) => (
-            <li key={p.clientMessageId} className="pt-1">
-              <p className="whitespace-pre-wrap break-words text-sm text-slate-400">{p.text}</p>
+            <li key={p.clientMessageId} className="flex flex-col items-end pt-1">
+              <p className="bg-brand max-w-[85%] whitespace-pre-wrap break-words rounded-2xl rounded-br-md px-3 py-1.5 text-sm text-white opacity-60">
+                {p.text}
+              </p>
               {p.error ? (
-                <div className="flex flex-wrap items-center gap-2 text-xs text-red-600">
+                <div className="mt-0.5 flex flex-wrap items-center justify-end gap-2 px-1 text-xs text-red-600">
                   <span>{t('chat.failed', { reason: p.error })}</span>
                   <button onClick={() => onRetry(p.clientMessageId)} className="font-medium underline">
                     {t('chat.retry')}
@@ -160,7 +170,7 @@ export function ChatPanel(props: ChatPanelProps) {
                   </button>
                 </div>
               ) : (
-                <span className="text-[11px] text-slate-400">{t('chat.sending')}</span>
+                <span className="px-1 text-[11px] text-slate-400">{t('chat.sending')}</span>
               )}
             </li>
           ))}
@@ -176,7 +186,7 @@ export function ChatPanel(props: ChatPanelProps) {
           e.preventDefault()
           submit()
         }}
-        className="border-t border-slate-200 p-3"
+        className="border-t border-slate-100 p-3"
       >
         <textarea
           aria-label={t('chat.inputLabel')}
@@ -191,7 +201,7 @@ export function ChatPanel(props: ChatPanelProps) {
           }}
           onBlur={() => onTyping(false)}
           onKeyDown={onKeyDown}
-          className="block w-full resize-none rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
+          className="field block w-full resize-none px-3 py-2 text-sm"
         />
         <div className="mt-2 flex items-center justify-between">
           <span className="text-xs text-slate-400">
@@ -200,7 +210,7 @@ export function ChatPanel(props: ChatPanelProps) {
           <button
             type="submit"
             disabled={!draft.trim()}
-            className="rounded-lg bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-500 disabled:bg-slate-300"
+            className="btn-primary rounded-xl px-4 py-1.5 text-sm"
           >
             {t('chat.send')}
           </button>

@@ -15,6 +15,7 @@ import { Toolbar } from '../canvas/Toolbar'
 import { TOOLS } from '../canvas/tools'
 import { DEFAULT_STYLE, type Shape, type ShapeStyle, type Tool } from '../canvas/types'
 import { ChatPanel } from '../components/ChatPanel'
+import { ArrowLeftIcon, ChatIcon, DownloadIcon, ShareIcon } from '../components/icons'
 import { LanguageSwitcher } from '../components/LanguageSwitcher'
 import { PresenceBar } from '../components/PresenceBar'
 import { ShareDialog } from '../components/ShareDialog'
@@ -78,30 +79,32 @@ export function BoardPage() {
   }
 
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center gap-3 bg-slate-50 px-4 text-center">
-      {state.status === 'loading' && (
+    <div className="flex min-h-screen items-center justify-center px-4 text-center">
+      {state.status === 'loading' ? (
         <p role="status" className="text-slate-500">
           {t('common.loading')}
         </p>
-      )}
-      {state.status === 'notFound' && (
-        <>
-          <h1 className="text-xl font-semibold text-slate-900">{t('board.notFoundTitle')}</h1>
-          <p className="text-sm text-slate-500">{t('board.notFoundHint')}</p>
-        </>
-      )}
-      {state.status === 'error' && (
-        <div role="alert" className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-          {state.message}{' '}
-          <button onClick={reload} className="font-medium underline">
-            {t('common.tryAgain')}
-          </button>
+      ) : (
+        <div className="card flex w-full max-w-md flex-col items-center gap-3 p-8">
+          {state.status === 'notFound' && (
+            <>
+              <h1 className="text-xl font-bold text-slate-900">{t('board.notFoundTitle')}</h1>
+              <p className="text-sm text-slate-500">{t('board.notFoundHint')}</p>
+            </>
+          )}
+          {state.status === 'error' && (
+            <div role="alert" className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+              {state.message}{' '}
+              <button onClick={reload} className="font-medium underline">
+                {t('common.tryAgain')}
+              </button>
+            </div>
+          )}
+          <Link to="/" className="btn-primary mt-2 inline-flex items-center gap-1.5 rounded-xl px-4 py-2 text-sm">
+            <ArrowLeftIcon />
+            {t('board.back')}
+          </Link>
         </div>
-      )}
-      {state.status !== 'loading' && (
-        <Link to="/" className="text-sm font-medium text-indigo-600 hover:text-indigo-500">
-          ← {t('board.back')}
-        </Link>
       )}
     </div>
   )
@@ -250,17 +253,21 @@ function BoardEditor({ board, shapes: initialShapes, version }: Loaded) {
   const syncStatus: SyncStatus = !unsynced ? 'saved' : room.status === 'connected' ? 'saving' : 'offline'
 
   return (
-    <div className="flex h-screen flex-col bg-slate-50">
-      <header className="flex items-center gap-4 border-b border-slate-200 bg-white px-4 py-2">
-        <Link to="/" className="text-sm font-medium text-indigo-600 hover:text-indigo-500">
-          ← {t('board.back')}
+    <div className="flex h-screen flex-col">
+      <header className="flex items-center gap-3 border-b border-white/70 bg-white/70 px-4 py-2.5 backdrop-blur-md">
+        <Link
+          to="/"
+          className="btn-secondary inline-flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-medium"
+        >
+          <ArrowLeftIcon className="h-4 w-4 text-slate-400" />
+          {t('board.back')}
         </Link>
-        <h1 className="min-w-0 flex-1 truncate text-base font-semibold text-slate-900" title={board.name}>
+        <h1 className="min-w-0 flex-1 truncate text-base font-bold text-slate-900" title={board.name}>
           {board.name}
         </h1>
         <PresenceBar online={room.online} selfId={user?.id} status={room.status} />
         {readOnly ? (
-          <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600">
+          <span className="rounded-full bg-violet-50 px-3 py-1 text-xs font-medium text-violet-700 ring-1 ring-violet-200">
             {t('board.viewOnly')}
           </span>
         ) : (
@@ -269,8 +276,9 @@ function BoardEditor({ board, shapes: initialShapes, version }: Loaded) {
         <button
           onClick={() => setChatOpen(!chatOpen)}
           aria-expanded={chatOpen}
-          className="relative rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-100"
+          className="btn-secondary relative inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-sm"
         >
+          <ChatIcon className="h-4 w-4 text-blue-500" />
           {t('chat.toggle')}
           {!chatOpen && room.chat.unread > 0 && (
             <span
@@ -285,20 +293,22 @@ function BoardEditor({ board, shapes: initialShapes, version }: Loaded) {
           onClick={exportPng}
           disabled={shapes.length === 0 || exporting}
           title={shapes.length === 0 ? t('board.export.empty') : undefined}
-          className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent"
+          className="btn-secondary inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-sm"
         >
+          <DownloadIcon className="h-4 w-4 text-emerald-500" />
           {t('board.export.button')}
         </button>
         <button
           onClick={() => setSharing(true)}
-          className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-100"
+          className="btn-primary inline-flex items-center gap-1.5 rounded-xl px-3.5 py-1.5 text-sm"
         >
+          <ShareIcon />
           {t('share.open')}
         </button>
         <LanguageSwitcher />
       </header>
       {room.error && (
-        <div role="alert" className="flex items-center gap-3 border-b border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">
+        <div role="alert" className="mx-3 mt-3 flex items-center gap-3 rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">
           <span className="flex-1">{room.error}</span>
           <button onClick={room.clearError} className="font-medium underline">
             {t('common.dismiss')}
@@ -306,7 +316,7 @@ function BoardEditor({ board, shapes: initialShapes, version }: Loaded) {
         </div>
       )}
       {exportFailed && (
-        <div role="alert" className="flex items-center gap-3 border-b border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">
+        <div role="alert" className="mx-3 mt-3 flex items-center gap-3 rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">
           <span className="flex-1">{t('board.export.failed')}</span>
           <button onClick={() => setExportFailed(false)} className="font-medium underline">
             {t('common.dismiss')}
@@ -321,7 +331,7 @@ function BoardEditor({ board, shapes: initialShapes, version }: Loaded) {
           onLeft={() => navigate('/', { replace: true })}
         />
       )}
-      <div className="flex min-h-0 flex-1">
+      <div className="flex min-h-0 flex-1 gap-3 p-3">
         {!readOnly && (
           <Toolbar
             tool={tool}
@@ -334,20 +344,23 @@ function BoardEditor({ board, shapes: initialShapes, version }: Loaded) {
             onRedo={redo}
           />
         )}
-        <CanvasStage
-          ref={canvasRef}
-          shapes={shapes}
-          readOnly={readOnly}
-          tool={tool}
-          style={style}
-          selectedId={selected}
-          onSelect={setSelectedId}
-          onAdd={(shape) => perform({ type: 'add', shape })}
-          onUpdate={update}
-          onRemove={remove}
-          onPointerPosition={room.sendCursor}
-          overlay={(view) => <CursorLayer cursors={room.cursors} viewport={view} />}
-        />
+        {/* The frame (radius, border, shadow) is on a wrapper, so the stage's own box keeps no border offset. */}
+        <div className="card flex min-w-0 flex-1 overflow-hidden">
+          <CanvasStage
+            ref={canvasRef}
+            shapes={shapes}
+            readOnly={readOnly}
+            tool={tool}
+            style={style}
+            selectedId={selected}
+            onSelect={setSelectedId}
+            onAdd={(shape) => perform({ type: 'add', shape })}
+            onUpdate={update}
+            onRemove={remove}
+            onPointerPosition={room.sendCursor}
+            overlay={(view) => <CursorLayer cursors={room.cursors} viewport={view} />}
+          />
+        </div>
         {chatOpen && (
           <ChatPanel
             messages={room.chat.messages}
@@ -371,16 +384,18 @@ function BoardEditor({ board, shapes: initialShapes, version }: Loaded) {
 /** saved: the server has everything; saving: changes on their way; offline: queued until reconnect. */
 type SyncStatus = 'saved' | 'saving' | 'offline'
 
-const STATUS_CLASS: Record<SyncStatus, string> = {
-  saved: 'text-slate-500',
-  saving: 'text-slate-500',
-  offline: 'text-amber-600',
+const STATUS_CLASS: Record<SyncStatus, { text: string; dot: string }> = {
+  saved: { text: 'text-slate-500', dot: 'bg-emerald-400' },
+  saving: { text: 'text-slate-500', dot: 'bg-blue-400 animate-pulse' },
+  offline: { text: 'text-amber-700', dot: 'bg-amber-400' },
 }
 
 function SyncIndicator({ status }: { status: SyncStatus }) {
   const { t } = useTranslation()
+  const look = STATUS_CLASS[status]
   return (
-    <div role="status" className={`text-sm ${STATUS_CLASS[status]}`}>
+    <div role="status" className={`flex items-center gap-1.5 text-xs font-medium ${look.text}`}>
+      <span aria-hidden="true" className={`h-2 w-2 rounded-full ${look.dot}`} />
       {t(`board.status.${status}`)}
     </div>
   )

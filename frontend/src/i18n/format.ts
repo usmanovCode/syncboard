@@ -9,7 +9,17 @@ export function formatDate(iso: string, language: Language): string {
   )
 }
 
-const sameDay = (a: Date, b: Date) =>
+/** Today's date for the dashboard greeting: "Friday, Nov 27, 2026" / "2026년 11월 27일 금요일". */
+export function formatToday(language: Language, now = new Date()): string {
+  return new Intl.DateTimeFormat(LOCALES[language], {
+    weekday: 'long',
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  }).format(now)
+}
+
+const sameDay =(a: Date, b: Date) =>
   a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate()
 
 /** A chat message's time: "2:05 PM" / "오후 2:05" today, with the date on other days. */

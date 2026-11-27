@@ -74,6 +74,18 @@ export const ko: Translations<typeof en> = {
     deleteConfirm: '이 보드는 영구적으로 삭제됩니다. 계속하시겠습니까?',
     deleteYes: '삭제',
     deleting: '삭제 중…',
+    greeting: '안녕하세요, {{name}}님',
+    today: '오늘은 {{date}}',
+    subtitle: '하던 작업을 이어 가거나 새로 시작해 보세요.',
+    quick: {
+      newBoard: '보드 만들기',
+      newBoardHint: '빈 캔버스에서 시작',
+    },
+    stats: {
+      total: '전체 보드',
+      owned: '내가 만든 보드',
+      shared: '공유받은 보드',
+    },
   },
   presence: {
     label: '현재 접속 중',

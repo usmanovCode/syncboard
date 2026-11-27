@@ -80,7 +80,7 @@ export function LoginPage() {
       </form>
       <p className="mt-6 text-center text-sm text-slate-500">
         {t('auth.login.noAccount')}{' '}
-        <Link to="/register" className="font-medium text-indigo-600 hover:text-indigo-500">
+        <Link to="/register" className="font-semibold text-blue-600 hover:text-violet-600">
           {t('auth.login.toRegister')}
         </Link>
       </p>

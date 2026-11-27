@@ -32,8 +32,8 @@ function Icon({ children }: { children: ReactNode }) {
 }
 
 const buttonClass = (active: boolean) =>
-  `flex h-10 w-10 items-center justify-center rounded-lg transition disabled:cursor-not-allowed disabled:opacity-40 ${
-    active ? 'bg-indigo-600 text-white' : 'text-slate-700 hover:bg-slate-100'
+  `flex h-10 w-10 shrink-0 items-center justify-center rounded-xl transition disabled:cursor-not-allowed disabled:opacity-40 ${
+    active ? 'bg-brand text-white shadow-md shadow-indigo-500/30' : 'text-slate-600 hover:bg-violet-50 hover:text-violet-700'
   }`
 
 export function Toolbar({ tool, style, canUndo, canRedo, onTool, onStyle, onUndo, onRedo }: Props) {
@@ -43,7 +43,7 @@ export function Toolbar({ tool, style, canUndo, canRedo, onTool, onStyle, onUndo
   return (
     <aside
       aria-label={t('board.toolbar')}
-      className="flex w-14 shrink-0 flex-col items-center gap-1 overflow-y-auto border-r border-slate-200 bg-white py-3"
+      className="card flex w-14 shrink-0 flex-col items-center gap-1 overflow-y-auto py-3"
     >
       {TOOLS.map(({ tool: item, key, icon }) => {
         const label = t('board.withShortcut', { label: t(`board.tools.${item}`), key })
@@ -61,7 +61,7 @@ export function Toolbar({ tool, style, canUndo, canRedo, onTool, onStyle, onUndo
         )
       })}
 
-      <hr className="my-2 w-8 border-slate-200" />
+      <hr className="my-2 w-8 border-slate-100" />
 
       <div role="group" aria-label={t('board.color')} className="grid grid-cols-2 gap-1">
         {COLORS.map(({ key, value }) => (
@@ -72,14 +72,14 @@ export function Toolbar({ tool, style, canUndo, canRedo, onTool, onStyle, onUndo
             aria-pressed={style.stroke === value}
             onClick={() => onStyle({ stroke: value })}
             className={`h-5 w-5 rounded-full ring-offset-1 transition ${
-              style.stroke === value ? 'ring-2 ring-indigo-500' : 'hover:scale-110'
+              style.stroke === value ? 'ring-2 ring-violet-500' : 'hover:scale-110'
             }`}
             style={{ backgroundColor: value }}
           />
         ))}
       </div>
 
-      <hr className="my-2 w-8 border-slate-200" />
+      <hr className="my-2 w-8 border-slate-100" />
 
       <div role="group" aria-label={t('board.width')} className="flex flex-col gap-1">
         {WIDTHS.map(({ key, value }) => (
@@ -96,7 +96,7 @@ export function Toolbar({ tool, style, canUndo, canRedo, onTool, onStyle, onUndo
         ))}
       </div>
 
-      <hr className="my-2 w-8 border-slate-200" />
+      <hr className="my-2 w-8 border-slate-100" />
 
       <button
         aria-label={t('board.withShortcut', { label: t('board.undo'), key: `${mod}Z` })}
