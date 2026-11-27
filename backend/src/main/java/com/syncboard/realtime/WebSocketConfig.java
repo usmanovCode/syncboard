@@ -14,11 +14,13 @@ import org.springframework.web.socket.config.annotation.WebSocketMessageBrokerCo
 import org.springframework.web.socket.config.annotation.WebSocketTransportRegistration;
 
 /**
- * STOMP over plain WebSocket at {@code /ws}. Uses Spring's in-memory simple broker, so it works with a
- * single backend instance only; running several instances needs a shared broker (planned: Redis Pub/Sub).
+ * STOMP over plain WebSocket at {@code /ws}. Each instance runs Spring's simple broker for its own
+ * clients; {@link RealtimeBus} fans topic messages out to all instances through Redis Pub/Sub, and room
+ * state and presence live in Redis ({@link BoardRooms}, {@link ClusterPresence}). So any number of
+ * instances can run behind a load balancer (WebSocket-capable, no sticky sessions needed).
  */
 @Configuration
-@EnableScheduling // BoardRooms flushes rooms to the database periodically
+@EnableScheduling // BoardRooms flushes rooms to the database; ClusterPresence sends heartbeats
 @EnableWebSocketMessageBroker
 public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
 
@@ -67,8 +69,9 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
     @Bean
     ThreadPoolTaskScheduler heartbeatScheduler() {
         ThreadPoolTaskScheduler scheduler = new ThreadPoolTaskScheduler();
-        // Also runs @Scheduled jobs (room flushes), so heartbeats are not delayed by database writes.
-        scheduler.setPoolSize(2);
+        // Also runs the @Scheduled jobs (room flushes, instance heartbeats), so STOMP heartbeats are not
+        // delayed by database writes.
+        scheduler.setPoolSize(3);
         scheduler.setThreadNamePrefix("ws-scheduler-");
         scheduler.initialize();
         return scheduler;

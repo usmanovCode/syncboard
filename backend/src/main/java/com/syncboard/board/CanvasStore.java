@@ -26,12 +26,15 @@ public class CanvasStore {
         return canvases.findById(boardId).map(c -> new StoredCanvas(c.getContent(), c.getVersion()));
     }
 
-    /** Saves the document and bumps the board on the dashboard. False if the board is gone. */
+    /**
+     * Saves the document and bumps the board on the dashboard, unless a newer version is already stored.
+     * False if the board is gone.
+     */
     @Transactional
     public boolean save(long boardId, String content, long version) {
         Instant now = Instant.now().truncatedTo(ChronoUnit.MICROS);
         if (canvases.overwrite(boardId, content, version, now) == 0) {
-            return false;
+            return canvases.existsById(boardId);
         }
         boards.touch(boardId, now);
         return true;

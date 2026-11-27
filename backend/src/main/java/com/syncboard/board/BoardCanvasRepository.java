@@ -10,13 +10,14 @@ public interface BoardCanvasRepository extends JpaRepository<BoardCanvas, Long> 
 
     /**
      * Writes the live room state (the realtime room is the only writer). {@code version} is the room's
-     * op sequence number. Returns 0 if the canvas no longer exists (board deleted).
+     * op sequence number; an older or equal version never replaces a newer one, so instances writing
+     * the same room concurrently can't go backwards. Returns 0 if nothing was written.
      */
     @Modifying(flushAutomatically = true, clearAutomatically = true)
     @Query(value = """
             update board_canvases
                set content = cast(:content as jsonb), version = :version, updated_at = :now
-             where board_id = :boardId
+             where board_id = :boardId and version < :version
             """, nativeQuery = true)
     int overwrite(
             @Param("boardId") long boardId,

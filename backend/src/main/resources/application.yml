@@ -8,6 +8,11 @@ spring:
     url: ${DB_URL:jdbc:postgresql://localhost:5432/syncboard}
     username: ${DB_USERNAME:postgres}
     password: ${DB_PASSWORD:}
+  data:
+    redis:
+      # Required: real-time traffic, board rooms and presence go through Redis so that several
+      # backend instances can serve the same boards.
+      url: ${REDIS_URL:redis://localhost:6379}
   messages:
     # messages.properties is English; without this, a missing translation would fall back to the
     # JVM's locale bundle instead of English.
@@ -25,3 +30,11 @@ app:
     issuer: syncboard
   cors:
     allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:5173}
+  realtime:
+    # Prefix of every Redis key and Pub/Sub channel. Pub/Sub ignores the Redis database number, so
+    # apps sharing a Redis server (e.g. dev app and tests) need different prefixes.
+    redis-prefix: ${REDIS_PREFIX:syncboard}
+    # An instance that hasn't refreshed its heartbeat for this long counts as dead; another instance
+    # then removes its users from the online lists.
+    instance-ttl: PT15S
+    heartbeat-interval: PT5S
