@@ -10,7 +10,7 @@ export function AppHeader() {
   const { t } = useTranslation()
   return (
     <header className="sticky top-0 z-20 border-b border-white/70 bg-white/70 backdrop-blur-md">
-      <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-3">
+      <div className="mx-auto flex max-w-[1840px] items-center justify-between gap-4 px-4 py-3 sm:px-6 lg:px-10">
         <Logo />
         <div className="flex items-center gap-3">
           {user && (

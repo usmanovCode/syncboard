@@ -8,16 +8,16 @@ function AuthPreview() {
   return (
     <div
       aria-hidden="true"
-      className="relative h-28 overflow-hidden bg-linear-to-br from-blue-100 via-indigo-50 to-violet-200"
+      className="relative h-36 overflow-hidden bg-linear-to-br from-blue-100 via-indigo-50 to-violet-200"
     >
-      <div className="absolute inset-x-8 top-6 h-28 rounded-t-xl border border-white bg-white/85 shadow-sm">
+      <div className="absolute inset-x-10 top-8 h-32 rounded-t-xl border border-white bg-white/85 shadow-sm">
         <div className="flex items-center gap-1.5 border-b border-slate-100 px-3 py-2">
           <span className="h-2 w-2 rounded-full bg-rose-300" />
           <span className="h-2 w-2 rounded-full bg-amber-300" />
           <span className="h-2 w-2 rounded-full bg-emerald-300" />
           <span className="ml-3 h-1.5 w-16 rounded-full bg-slate-200" />
         </div>
-        <svg viewBox="0 0 300 60" className="h-14 w-full" fill="none" strokeLinecap="round" strokeWidth={3}>
+        <svg viewBox="0 0 300 60" className="h-20 w-full" fill="none" strokeLinecap="round" strokeWidth={3}>
           <path d="M20 40c25-25 45-25 60 0s40 10 55-12" className="stroke-blue-400" />
           <rect x="160" y="14" width="46" height="30" rx="6" className="stroke-violet-400" />
           <circle cx="250" cy="30" r="15" className="stroke-pink-400" />
@@ -35,15 +35,15 @@ export function AuthLayout({ title, subtitle, children }: { title: string; subti
       <div className="absolute top-4 right-4">
         <LanguageSwitcher />
       </div>
-      <div className="relative w-full max-w-md">
+      <div className="relative w-full max-w-lg">
         <div className="mb-8 flex justify-center">
           <Logo size="lg" />
         </div>
         <div className="card overflow-hidden">
           <AuthPreview />
-          <div className="p-8">
-            <h1 className="text-2xl font-bold text-slate-900">{title}</h1>
-            <p className="mt-1 mb-6 text-sm text-slate-500">{subtitle}</p>
+          <div className="p-7 sm:p-10">
+            <h1 className="text-3xl font-bold text-slate-900">{title}</h1>
+            <p className="mt-1.5 mb-7 text-base text-slate-500">{subtitle}</p>
             {children}
           </div>
         </div>
