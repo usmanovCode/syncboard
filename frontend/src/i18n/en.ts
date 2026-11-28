@@ -70,6 +70,18 @@ export const en = {
     deleteConfirm: 'This board will be permanently deleted. Continue?',
     deleteYes: 'Yes, delete',
     deleting: 'Deleting…',
+    greeting: 'Hello, {{name}}',
+    today: 'Today is {{date}}',
+    subtitle: 'Pick up where you left off, or start something new.',
+    quick: {
+      newBoard: 'Create a board',
+      newBoardHint: 'Start from a blank canvas',
+    },
+    stats: {
+      total: 'All boards',
+      owned: 'Owned by me',
+      shared: 'Shared with me',
+    },
   },
   presence: {
     label: 'Online now',

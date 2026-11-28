@@ -93,7 +93,7 @@ export function RegisterPage() {
       </form>
       <p className="mt-6 text-center text-sm text-slate-500">
         {t('auth.register.hasAccount')}{' '}
-        <Link to="/login" className="font-medium text-indigo-600 hover:text-indigo-500">
+        <Link to="/login" className="font-semibold text-blue-600 hover:text-violet-600">
           {t('auth.register.toLogin')}
         </Link>
       </p>

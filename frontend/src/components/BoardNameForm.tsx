@@ -54,11 +54,7 @@ export function BoardNameForm({ label, initialName = '', submitLabel, onSubmit, 
         autoFocus
         aria-invalid={error ? true : undefined}
         aria-describedby={error ? `${id}-error` : undefined}
-        className={`block w-full rounded-lg border px-3 py-2 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:ring-2 ${
-          error
-            ? 'border-red-400 focus:border-red-500 focus:ring-red-100'
-            : 'border-slate-300 focus:border-indigo-500 focus:ring-indigo-100'
-        }`}
+        className="field block w-full px-3.5 py-2.5 text-sm"
       />
       {error && (
         <p id={`${id}-error`} className="mt-1 text-xs text-red-600">
@@ -66,18 +62,14 @@ export function BoardNameForm({ label, initialName = '', submitLabel, onSubmit, 
         </p>
       )}
       <div className="mt-3 flex gap-2">
-        <button
-          type="submit"
-          disabled={saving}
-          className="rounded-lg bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-500 disabled:opacity-60"
-        >
+        <button type="submit" disabled={saving} className="btn-primary rounded-xl px-4 py-2 text-sm">
           {saving ? t('common.saving') : submitLabel}
         </button>
         <button
           type="button"
           onClick={onCancel}
           disabled={saving}
-          className="rounded-lg px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-100"
+          className="rounded-xl px-3 py-2 text-sm text-slate-600 hover:bg-slate-100"
         >
           {t('common.cancel')}
         </button>

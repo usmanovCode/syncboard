@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { membersApi, type Board, type Member, type MemberRole } from '../api/boards'
 import { ApiError } from '../api/client'
 import { FormAlert } from './AuthLayout'
+import { initials } from './initials'
 import { TextField } from './TextField'
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
@@ -97,19 +98,19 @@ export function ShareDialog({ board, currentUserId, onClose, onLeft }: Props) {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center bg-slate-900/40 px-4 py-16" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-start justify-center bg-slate-900/30 px-4 py-16 backdrop-blur-sm" onClick={onClose}>
       <div
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
-        className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-xl"
+        className="card w-full max-w-lg p-6 shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="mb-4 flex items-start justify-between gap-4">
-          <h2 id={titleId} className="text-lg font-semibold text-slate-900">
+          <h2 id={titleId} className="text-lg font-bold text-slate-900">
             {t('share.title', { name: board.name })}
           </h2>
-          <button onClick={onClose} className="rounded-lg px-2 py-1 text-sm text-slate-500 hover:bg-slate-100">
+          <button onClick={onClose} className="rounded-xl px-2.5 py-1 text-sm text-slate-500 hover:bg-slate-100">
             {t('share.close')}
           </button>
         </div>
@@ -134,7 +135,7 @@ export function ShareDialog({ board, currentUserId, onClose, onLeft }: Props) {
               <select
                 value={role}
                 onChange={(e) => setRole(e.target.value as MemberRole)}
-                className="rounded-lg border border-slate-300 px-2 py-2 text-sm"
+                className="field px-2.5 py-2.5 text-sm"
               >
                 {MEMBER_ROLES.map((r) => (
                   <option key={r} value={r}>
@@ -146,7 +147,7 @@ export function ShareDialog({ board, currentUserId, onClose, onLeft }: Props) {
             <button
               type="submit"
               disabled={inviting}
-              className="mt-6.5 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500 disabled:opacity-60"
+              className="btn-primary mt-6.5 rounded-xl px-4 py-2.5 text-sm"
             >
               {inviting ? t('share.inviting') : t('share.invite')}
             </button>
@@ -154,7 +155,7 @@ export function ShareDialog({ board, currentUserId, onClose, onLeft }: Props) {
         )}
         {isOwner && <p className="mb-4 text-xs text-slate-500">{t('share.roleHint')}</p>}
 
-        <h3 className="mb-2 text-sm font-medium text-slate-700">{t('share.people')}</h3>
+        <h3 className="mb-2 text-sm font-semibold text-slate-700">{t('share.people')}</h3>
         {members === null ? (
           !error && <p className="text-sm text-slate-500">{t('common.loading')}</p>
         ) : (
@@ -162,7 +163,13 @@ export function ShareDialog({ board, currentUserId, onClose, onLeft }: Props) {
             {members.map((member) => {
               const isMe = member.userId === currentUserId
               return (
-                <li key={member.userId} aria-label={member.fullName} className="flex items-center gap-3 py-2">
+                <li key={member.userId} aria-label={member.fullName} className="flex items-center gap-3 py-2.5">
+                  <span
+                    aria-hidden="true"
+                    className="bg-brand flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-xs font-semibold text-white"
+                  >
+                    {initials(member.fullName)}
+                  </span>
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-sm font-medium text-slate-900">
                       {member.fullName} {isMe && <span className="font-normal text-slate-500">{t('share.you')}</span>}
@@ -175,7 +182,7 @@ export function ShareDialog({ board, currentUserId, onClose, onLeft }: Props) {
                         aria-label={t('share.roleFor', { name: member.fullName })}
                         value={member.role}
                         onChange={(e) => void changeRole(member, e.target.value as MemberRole)}
-                        className="rounded-lg border border-slate-300 px-2 py-1 text-sm"
+                        className="field px-2 py-1.5 text-sm"
                       >
                         {MEMBER_ROLES.map((r) => (
                           <option key={r} value={r}>
@@ -187,18 +194,20 @@ export function ShareDialog({ board, currentUserId, onClose, onLeft }: Props) {
                         aria-label={t('share.remove', { name: member.fullName })}
                         title={t('share.remove', { name: member.fullName })}
                         onClick={() => void remove(member)}
-                        className="rounded-lg px-2 py-1 text-sm text-red-600 hover:bg-red-50"
+                        className="rounded-xl px-2.5 py-1 text-sm text-red-600 hover:bg-red-50"
                       >
                         ✕
                       </button>
                     </>
                   ) : (
-                    <span className="text-sm text-slate-500">{t(`roles.${member.role}`)}</span>
+                    <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-medium text-slate-600">
+                      {t(`roles.${member.role}`)}
+                    </span>
                   )}
                   {!isOwner && isMe && (
                     <button
                       onClick={() => void remove(member)}
-                      className="rounded-lg px-2 py-1 text-sm text-red-600 hover:bg-red-50"
+                      className="rounded-xl px-2.5 py-1 text-sm text-red-600 hover:bg-red-50"
                     >
                       {t('share.leave')}
                     </button>

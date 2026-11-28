@@ -17,5 +17,9 @@ export default defineConfig({
   test: {
     environment: 'jsdom',
     setupFiles: ['./src/test/setup.ts'],
+    // The 5 s default is too tight under a full parallel run: the pinch-zoom test fires ~340 wheel
+    // events, each querying the whole DOM, and took ~4 s even before the redesign. A higher ceiling
+    // costs nothing when tests are fast.
+    testTimeout: 15_000,
   },
 })
