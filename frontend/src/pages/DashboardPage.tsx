@@ -78,35 +78,35 @@ export function DashboardPage() {
   const boards = state.status === 'ready' ? state.boards : []
   const owned = boards.filter((b) => b.role === 'OWNER').length
   const stats = [
-    { key: 'total', value: boards.length, icon: <BoardsIcon />, tint: 'bg-blue-50 text-blue-600' },
-    { key: 'owned', value: owned, icon: <UserIcon />, tint: 'bg-violet-50 text-violet-600' },
-    { key: 'shared', value: boards.length - owned, icon: <UsersIcon />, tint: 'bg-emerald-50 text-emerald-600' },
+    { key: 'total', value: boards.length, icon: <BoardsIcon className="h-6 w-6" />, tint: 'bg-blue-50 text-blue-600' },
+    { key: 'owned', value: owned, icon: <UserIcon className="h-6 w-6" />, tint: 'bg-violet-50 text-violet-600' },
+    { key: 'shared', value: boards.length - owned, icon: <UsersIcon className="h-6 w-6" />, tint: 'bg-emerald-50 text-emerald-600' },
   ] as const
 
   return (
-    <div className="min-h-screen">
+    <div className="flex min-h-screen flex-col">
       <AppHeader />
-      <main className="mx-auto max-w-6xl px-4 py-8">
-        <section className="card relative mb-6 overflow-hidden p-6 sm:p-8">
+      <main className="mx-auto flex w-full max-w-[1840px] flex-1 flex-col px-4 py-6 sm:px-6 lg:px-10 lg:py-8">
+        <section className="card relative mb-6 overflow-hidden p-6 sm:p-8 lg:p-10">
           <div
             aria-hidden="true"
             className="pointer-events-none absolute inset-0 bg-linear-to-r from-blue-50/80 via-white to-violet-100/70"
           />
           <div className="relative flex flex-wrap items-center justify-between gap-6">
             <div className="min-w-0">
-              <p className="flex items-center gap-1.5 text-sm font-medium text-blue-600">
-                <CalendarIcon />
+              <p className="flex items-center gap-2 text-base font-medium text-blue-600">
+                <CalendarIcon className="h-5 w-5" />
                 {t('dashboard.today', { date: formatToday(currentLanguage()) })}
               </p>
               {user && (
-                <p className="mt-2 truncate text-2xl font-bold text-slate-900 sm:text-3xl">
+                <p className="mt-2 text-2xl font-bold break-words text-slate-900 sm:text-3xl lg:text-4xl">
                   {t('dashboard.greeting', { name: user.fullName })}
                 </p>
               )}
-              <p className="mt-1 text-sm text-slate-500">{t('dashboard.subtitle')}</p>
+              <p className="mt-2 text-base text-slate-500">{t('dashboard.subtitle')}</p>
             </div>
             {state.status === 'ready' && !creating && (
-              <button onClick={() => setCreating(true)} className="btn-primary rounded-xl px-5 py-3 text-sm">
+              <button onClick={() => setCreating(true)} className="btn-primary rounded-xl px-6 py-3.5 text-base">
                 {t('dashboard.newBoard')}
               </button>
             )}
@@ -114,84 +114,86 @@ export function DashboardPage() {
         </section>
 
         {state.status === 'ready' && (
-          <div className="mb-8 grid grid-cols-2 gap-4 lg:grid-cols-4">
+          <div className="mb-6 grid grid-cols-2 gap-4 lg:grid-cols-4 lg:gap-6">
             <button
               onClick={() => setCreating(true)}
               disabled={creating}
-              className="card group flex flex-col items-center justify-center gap-2 p-5 text-center transition hover:-translate-y-0.5 hover:shadow-lift disabled:cursor-default disabled:opacity-60 disabled:hover:translate-y-0 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-violet-500"
+              className="card group flex flex-col items-center justify-center gap-2 p-5 text-center lg:p-7 transition hover:-translate-y-0.5 hover:shadow-lift disabled:cursor-default disabled:opacity-60 disabled:hover:translate-y-0 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-violet-500"
             >
-              <span className="bg-brand flex h-10 w-10 items-center justify-center rounded-xl text-white shadow-md shadow-indigo-500/30">
-                <PlusIcon className="h-5 w-5" />
+              <span className="bg-brand flex h-12 w-12 items-center justify-center rounded-2xl text-white shadow-md shadow-indigo-500/30">
+                <PlusIcon className="h-6 w-6" />
               </span>
-              <span className="text-sm font-semibold text-slate-800">{t('dashboard.quick.newBoard')}</span>
-              <span className="text-xs text-slate-500">{t('dashboard.quick.newBoardHint')}</span>
+              <span className="text-base font-semibold text-slate-800">{t('dashboard.quick.newBoard')}</span>
+              <span className="text-sm text-slate-500">{t('dashboard.quick.newBoardHint')}</span>
             </button>
             {stats.map(({ key, value, icon, tint }) => (
-              <div key={key} className="card flex flex-col items-center justify-center gap-1.5 p-5 text-center">
-                <span aria-hidden="true" className={`flex h-10 w-10 items-center justify-center rounded-xl ${tint}`}>
+              <div key={key} className="card flex flex-col items-center justify-center gap-1.5 p-5 text-center lg:p-7">
+                <span aria-hidden="true" className={`flex h-12 w-12 items-center justify-center rounded-2xl ${tint}`}>
                   {icon}
                 </span>
-                <span className="text-2xl font-bold text-slate-900 tabular-nums">{value}</span>
-                <span className="text-xs text-slate-500">{t(`dashboard.stats.${key}`)}</span>
+                <span className="text-3xl font-bold text-slate-900 tabular-nums">{value}</span>
+                <span className="text-sm text-slate-500">{t(`dashboard.stats.${key}`)}</span>
               </div>
             ))}
           </div>
         )}
 
-        <h1 className="mb-4 text-xl font-bold text-slate-900">{t('dashboard.title')}</h1>
+        <section className="flex-1 rounded-[24px] border border-white/80 bg-white/45 p-4 shadow-soft backdrop-blur-sm sm:p-6 lg:p-8">
+          <h1 className="mb-5 text-2xl font-bold text-slate-900">{t('dashboard.title')}</h1>
 
-        {state.status === 'loading' && (
-          <p role="status" className="text-slate-500">
-            {t('common.loading')}
-          </p>
-        )}
+          {state.status === 'loading' && (
+            <p role="status" className="text-slate-500">
+              {t('common.loading')}
+            </p>
+          )}
 
-        {state.status === 'error' && (
-          <div role="alert" className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-            {state.message}{' '}
-            <button onClick={retry} className="font-medium underline">
-              {t('common.tryAgain')}
-            </button>
-          </div>
-        )}
+          {state.status === 'error' && (
+            <div role="alert" className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+              {state.message}{' '}
+              <button onClick={retry} className="font-medium underline">
+                {t('common.tryAgain')}
+              </button>
+            </div>
+          )}
 
-        {state.status === 'ready' && (
-          <>
-            {creating && (
-              <section className="card mb-6 max-w-md p-5">
-                <h2 className="mb-3 text-sm font-semibold text-slate-800">{t('dashboard.newBoardTitle')}</h2>
-                <BoardNameForm
-                  label={t('dashboard.newBoardName')}
-                  submitLabel={t('dashboard.create')}
-                  onSubmit={createBoard}
-                  onCancel={() => setCreating(false)}
-                />
-              </section>
-            )}
-
-            {state.boards.length === 0 && !creating ? (
-              <div className="card flex flex-col items-center border-dashed px-6 py-14 text-center">
-                <span aria-hidden="true" className="mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-violet-50 text-violet-600">
-                  <BoardsIcon className="h-6 w-6" />
-                </span>
-                <p className="font-semibold text-slate-800">{t('dashboard.emptyTitle')}</p>
-                <p className="mt-1 text-sm text-slate-500">{t('dashboard.emptyHint')}</p>
-              </div>
-            ) : (
-              <ul className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-                {state.boards.map((board) => (
-                  <BoardCard
-                    key={board.id}
-                    board={board}
-                    canManage={board.role === 'OWNER'}
-                    onRename={(name) => renameBoard(board.id, name)}
-                    onDelete={() => deleteBoard(board.id)}
+          {state.status === 'ready' && (
+            <>
+              {creating && (
+                <section className="card mb-6 max-w-md p-5">
+                  <h2 className="mb-3 text-base font-semibold text-slate-800">{t('dashboard.newBoardTitle')}</h2>
+                  <BoardNameForm
+                    label={t('dashboard.newBoardName')}
+                    submitLabel={t('dashboard.create')}
+                    onSubmit={createBoard}
+                    onCancel={() => setCreating(false)}
                   />
-                ))}
-              </ul>
-            )}
-          </>
-        )}
+                </section>
+              )}
+
+              {state.boards.length === 0 && !creating ? (
+                <div className="card flex flex-col items-center border-dashed px-6 py-14 text-center">
+                  <span aria-hidden="true" className="mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-violet-50 text-violet-600">
+                    <BoardsIcon className="h-6 w-6" />
+                  </span>
+                  <p className="text-lg font-semibold text-slate-800">{t('dashboard.emptyTitle')}</p>
+                  <p className="mt-1 text-base text-slate-500">{t('dashboard.emptyHint')}</p>
+                </div>
+              ) : (
+                <ul className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+                  {state.boards.map((board) => (
+                    <BoardCard
+                      key={board.id}
+                      board={board}
+                      canManage={board.role === 'OWNER'}
+                      onRename={(name) => renameBoard(board.id, name)}
+                      onDelete={() => deleteBoard(board.id)}
+                    />
+                  ))}
+                </ul>
+              )}
+            </>
+          )}
+        </section>
       </main>
     </div>
   )

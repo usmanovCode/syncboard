@@ -6,6 +6,7 @@ import { ApiError } from '../api/client'
 import { currentLanguage } from '../i18n'
 import { formatDate } from '../i18n/format'
 import { BoardNameForm } from './BoardNameForm'
+import { PencilIcon, TrashIcon } from './icons'
 
 type Props = {
   board: Board
@@ -16,6 +17,12 @@ type Props = {
 }
 
 type Mode = 'view' | 'rename' | 'confirmDelete'
+
+/** Card action buttons: icon + label, tinted fill, matching border, darker on hover. */
+const ACTION =
+  'inline-flex items-center gap-2 rounded-xl border px-4 py-2 text-sm font-semibold transition focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-violet-500'
+const RENAME = 'border-violet-200 bg-violet-50 text-violet-700 hover:border-violet-300 hover:bg-violet-100'
+const DANGER = 'border-red-200 bg-red-50 text-red-600 hover:border-red-300 hover:bg-red-100 hover:text-red-700'
 
 /** Pastel backdrops for the card preview, picked by board id so a board keeps its look. */
 const PREVIEWS = [
@@ -31,15 +38,15 @@ const PREVIEWS = [
 function BoardPreview({ id }: { id: number }) {
   const look = PREVIEWS[Math.abs(id) % PREVIEWS.length]
   return (
-    <div aria-hidden="true" className={`relative h-32 overflow-hidden bg-linear-to-br ${look.bg}`}>
-      <div className="absolute inset-x-8 top-6 h-32 rounded-t-xl border border-white/90 bg-white/80 shadow-sm">
-        <div className="flex items-center gap-1 px-3 py-2">
-          <span className="h-1.5 w-1.5 rounded-full bg-slate-300" />
-          <span className="h-1.5 w-1.5 rounded-full bg-slate-300" />
-          <span className="h-1.5 w-1.5 rounded-full bg-slate-300" />
-          <span className="ml-auto h-1.5 w-10 rounded-full bg-slate-200" />
+    <div aria-hidden="true" className={`relative h-44 overflow-hidden bg-linear-to-br sm:h-48 ${look.bg}`}>
+      <div className="absolute inset-x-8 top-7 h-48 rounded-t-2xl border border-white/90 bg-white/80 shadow-sm">
+        <div className="flex items-center gap-1.5 px-4 py-2.5">
+          <span className="h-2 w-2 rounded-full bg-slate-300" />
+          <span className="h-2 w-2 rounded-full bg-slate-300" />
+          <span className="h-2 w-2 rounded-full bg-slate-300" />
+          <span className="ml-auto h-2 w-14 rounded-full bg-slate-200" />
         </div>
-        <svg viewBox="0 0 240 70" className="h-[4.5rem] w-full" fill="none" strokeLinecap="round" strokeWidth={3}>
+        <svg viewBox="0 0 240 80" className="h-28 w-full" fill="none" strokeLinecap="round" strokeWidth={3}>
           <rect x="138" y="10" width="54" height="34" rx="8" className={look.fill} />
           <path d={id % 2 ? 'M18 50c20-30 40-30 55-5s35 8 48-15' : 'M18 30c18 22 36 22 52 4s34-18 50 6'} className={look.stroke} />
           <circle cx="212" cy="46" r="10" className={look.stroke} />
@@ -72,7 +79,7 @@ export function BoardCard({ board, canManage, onRename, onDelete }: Props) {
       className="card group relative flex flex-col overflow-hidden transition hover:-translate-y-0.5 hover:shadow-lift"
     >
       <BoardPreview id={board.id} />
-      <div className="flex flex-1 flex-col p-5">
+      <div className="flex flex-1 flex-col p-6">
         {mode === 'rename' ? (
           <BoardNameForm
             label={t('dashboard.renameLabel')}
@@ -86,7 +93,7 @@ export function BoardCard({ board, canManage, onRename, onDelete }: Props) {
           />
         ) : (
           <>
-            <h2 className="truncate text-base font-bold text-slate-900" title={board.name}>
+            <h2 className="truncate text-xl font-bold text-slate-900" title={board.name}>
               {/* Stretched link: the whole card opens the board; the buttons below sit above it (z-10). */}
               <Link
                 to={`/boards/${board.id}`}
@@ -95,11 +102,11 @@ export function BoardCard({ board, canManage, onRename, onDelete }: Props) {
                 {board.name}
               </Link>
             </h2>
-            <p className="mt-1.5 text-sm text-slate-500">
+            <p className="mt-2 text-base text-slate-500">
               {t('dashboard.updated', { date: formatDate(board.updatedAt, currentLanguage()) })}
             </p>
             {board.role !== 'OWNER' && (
-              <p className="mt-2 w-fit max-w-full truncate rounded-full bg-violet-50 px-2.5 py-0.5 text-xs font-medium text-violet-700">
+              <p className="mt-2.5 w-fit max-w-full truncate rounded-full bg-violet-50 px-3 py-1 text-sm font-medium text-violet-700">
                 {t('dashboard.sharedBy', { name: board.ownerName, role: t(`roles.${board.role}`) })}
               </p>
             )}
@@ -107,11 +114,9 @@ export function BoardCard({ board, canManage, onRename, onDelete }: Props) {
         )}
 
         {canManage && mode === 'view' && (
-          <div className="relative z-10 mt-auto flex gap-2 pt-4">
-            <button
-              onClick={() => setMode('rename')}
-              className="btn-secondary rounded-xl px-3 py-1.5 text-sm"
-            >
+          <div className="relative z-10 mt-auto flex flex-wrap gap-2.5 pt-5">
+            <button onClick={() => setMode('rename')} className={`${ACTION} ${RENAME}`}>
+              <PencilIcon />
               {t('dashboard.rename')}
             </button>
             <button
@@ -119,29 +124,30 @@ export function BoardCard({ board, canManage, onRename, onDelete }: Props) {
                 setDeleteError(null)
                 setMode('confirmDelete')
               }}
-              className="rounded-xl px-3 py-1.5 text-sm text-red-600 hover:bg-red-50"
+              className={`${ACTION} ${DANGER}`}
             >
+              <TrashIcon />
               {t('dashboard.delete')}
             </button>
           </div>
         )}
 
         {mode === 'confirmDelete' && (
-          <div className="relative z-10 mt-auto pt-4" role="group" aria-label={t('dashboard.deleteConfirmLabel')}>
-            <p className="text-sm text-slate-700">{t('dashboard.deleteConfirm')}</p>
-            {deleteError && <p className="mt-1 text-xs text-red-600">{deleteError}</p>}
-            <div className="mt-2 flex gap-2">
+          <div className="relative z-10 mt-auto pt-5" role="group" aria-label={t('dashboard.deleteConfirmLabel')}>
+            <p className="text-base text-slate-700">{t('dashboard.deleteConfirm')}</p>
+            {deleteError && <p className="mt-1 text-sm text-red-600">{deleteError}</p>}
+            <div className="mt-3 flex flex-wrap gap-2.5">
               <button
                 onClick={confirmDelete}
                 disabled={deleting}
-                className="rounded-xl bg-red-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-red-500 disabled:opacity-60"
+                className={`${ACTION} border-red-600 bg-red-600 text-white hover:border-red-500 hover:bg-red-500 disabled:opacity-60`}
               >
                 {deleting ? t('dashboard.deleting') : t('dashboard.deleteYes')}
               </button>
               <button
                 onClick={() => setMode('view')}
                 disabled={deleting}
-                className="rounded-xl px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-100"
+                className={`${ACTION} border-slate-200 bg-white text-slate-600 hover:bg-slate-50`}
               >
                 {t('common.cancel')}
               </button>
