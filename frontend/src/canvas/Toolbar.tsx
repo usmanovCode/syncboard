@@ -18,7 +18,7 @@ function Icon({ children }: { children: ReactNode }) {
   return (
     <svg
       viewBox="0 0 24 24"
-      className="h-5 w-5"
+      className="h-6 w-6"
       fill="none"
       stroke="currentColor"
       strokeWidth={2}
@@ -32,7 +32,7 @@ function Icon({ children }: { children: ReactNode }) {
 }
 
 const buttonClass = (active: boolean) =>
-  `flex h-10 w-10 shrink-0 items-center justify-center rounded-xl transition disabled:cursor-not-allowed disabled:opacity-40 ${
+  `flex h-12 w-12 shrink-0 items-center justify-center rounded-xl transition disabled:cursor-not-allowed disabled:opacity-40 ${
     active ? 'bg-brand text-white shadow-md shadow-indigo-500/30' : 'text-slate-600 hover:bg-violet-50 hover:text-violet-700'
   }`
 
@@ -43,7 +43,7 @@ export function Toolbar({ tool, style, canUndo, canRedo, onTool, onStyle, onUndo
   return (
     <aside
       aria-label={t('board.toolbar')}
-      className="card flex w-14 shrink-0 flex-col items-center gap-1 overflow-y-auto py-3"
+      className="card flex w-16 shrink-0 flex-col items-center gap-1 overflow-y-auto py-3"
     >
       {TOOLS.map(({ tool: item, key, icon }) => {
         const label = t('board.withShortcut', { label: t(`board.tools.${item}`), key })
@@ -61,9 +61,9 @@ export function Toolbar({ tool, style, canUndo, canRedo, onTool, onStyle, onUndo
         )
       })}
 
-      <hr className="my-2 w-8 border-slate-100" />
+      <hr className="my-2 w-10 border-slate-100" />
 
-      <div role="group" aria-label={t('board.color')} className="grid grid-cols-2 gap-1">
+      <div role="group" aria-label={t('board.color')} className="grid grid-cols-2 gap-1.5">
         {COLORS.map(({ key, value }) => (
           <button
             key={key}
@@ -71,7 +71,7 @@ export function Toolbar({ tool, style, canUndo, canRedo, onTool, onStyle, onUndo
             title={t(`board.colors.${key}`)}
             aria-pressed={style.stroke === value}
             onClick={() => onStyle({ stroke: value })}
-            className={`h-5 w-5 rounded-full ring-offset-1 transition ${
+            className={`h-6 w-6 rounded-full ring-offset-1 transition ${
               style.stroke === value ? 'ring-2 ring-violet-500' : 'hover:scale-110'
             }`}
             style={{ backgroundColor: value }}
@@ -79,7 +79,7 @@ export function Toolbar({ tool, style, canUndo, canRedo, onTool, onStyle, onUndo
         ))}
       </div>
 
-      <hr className="my-2 w-8 border-slate-100" />
+      <hr className="my-2 w-10 border-slate-100" />
 
       <div role="group" aria-label={t('board.width')} className="flex flex-col gap-1">
         {WIDTHS.map(({ key, value }) => (
@@ -91,12 +91,12 @@ export function Toolbar({ tool, style, canUndo, canRedo, onTool, onStyle, onUndo
             onClick={() => onStyle({ strokeWidth: value })}
             className={buttonClass(style.strokeWidth === value)}
           >
-            <span className="w-6 rounded-full bg-current" style={{ height: value }} />
+            <span className="w-7 rounded-full bg-current" style={{ height: value }} />
           </button>
         ))}
       </div>
 
-      <hr className="my-2 w-8 border-slate-100" />
+      <hr className="my-2 w-10 border-slate-100" />
 
       <button
         aria-label={t('board.withShortcut', { label: t('board.undo'), key: `${mod}Z` })}

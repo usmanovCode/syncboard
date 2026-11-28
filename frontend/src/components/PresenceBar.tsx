@@ -10,7 +10,7 @@ export function PresenceBar({ online, selfId, status }: { online: OnlineUser[]; 
   const { t } = useTranslation()
   if (status !== 'connected') {
     return (
-      <span aria-live="polite" className="rounded-full bg-amber-50 px-3 py-1 text-xs font-medium text-amber-700 ring-1 ring-amber-200">
+      <span aria-live="polite" className="rounded-full bg-amber-50 px-3.5 py-1.5 text-sm font-medium text-amber-700 ring-1 ring-amber-200">
         {t(status === 'connecting' ? 'presence.connecting' : 'presence.reconnecting')}
       </span>
     )
@@ -32,7 +32,7 @@ export function PresenceBar({ online, selfId, status }: { online: OnlineUser[]; 
             key={user.userId}
             aria-label={label}
             title={label}
-            className="flex h-8 w-8 items-center justify-center rounded-full text-xs font-semibold text-white shadow-sm ring-2 ring-white"
+            className="flex h-10 w-10 items-center justify-center rounded-full text-sm font-semibold text-white shadow-sm ring-2 ring-white"
             style={{ backgroundColor: user.color }}
           >
             {initials(user.name)}
@@ -43,7 +43,7 @@ export function PresenceBar({ online, selfId, status }: { online: OnlineUser[]; 
         <li
           aria-label={hidden.map((u) => u.name).join(', ')}
           title={hidden.map((u) => u.name).join(', ')}
-          className="flex h-8 w-8 items-center justify-center rounded-full bg-violet-100 text-xs font-semibold text-violet-700 shadow-sm ring-2 ring-white"
+          className="flex h-10 w-10 items-center justify-center rounded-full bg-violet-100 text-sm font-semibold text-violet-700 shadow-sm ring-2 ring-white"
         >
           {t('presence.more', { count: hidden.length })}
         </li>

@@ -110,6 +110,9 @@ export function BoardPage() {
   )
 }
 
+/** Chat, Export and Share in the board header: icon-only squares on phones, icon + label from sm up. */
+const HEADER_BUTTON = 'inline-flex items-center gap-2 rounded-xl p-2.5 text-base sm:px-4 sm:py-2'
+
 /** Whether the chat panel is open (it is by default), remembered across boards and visits. */
 const CHAT_OPEN_KEY = 'syncboard.chatOpen'
 
@@ -254,58 +257,58 @@ function BoardEditor({ board, shapes: initialShapes, version }: Loaded) {
 
   return (
     <div className="flex h-screen flex-col">
-      <header className="flex items-center gap-3 border-b border-white/70 bg-white/70 px-4 py-2.5 backdrop-blur-md">
+      {/* Phones: actions wrap to a second row and show only their icons (labels stay for screen readers). */}
+      <header className="flex min-h-[72px] flex-wrap items-center gap-x-3 gap-y-2 border-b border-white/70 bg-white/70 px-3 py-3 backdrop-blur-md sm:gap-x-4 sm:px-4">
         <Link
           to="/"
-          className="btn-secondary inline-flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-medium"
+          className="btn-secondary inline-flex shrink-0 items-center gap-2 rounded-full p-2.5 text-base font-medium sm:px-4 sm:py-2"
         >
-          <ArrowLeftIcon className="h-4 w-4 text-slate-400" />
-          {t('board.back')}
+          <ArrowLeftIcon className="h-5 w-5 text-slate-400" />
+          <span className="sr-only sm:not-sr-only">{t('board.back')}</span>
         </Link>
-        <h1 className="min-w-0 flex-1 truncate text-base font-bold text-slate-900" title={board.name}>
+        <h1 className="min-w-0 flex-1 truncate text-lg font-bold text-slate-900 sm:text-xl" title={board.name}>
           {board.name}
         </h1>
         <PresenceBar online={room.online} selfId={user?.id} status={room.status} />
         {readOnly ? (
-          <span className="rounded-full bg-violet-50 px-3 py-1 text-xs font-medium text-violet-700 ring-1 ring-violet-200">
+          <span className="rounded-full bg-violet-50 px-3.5 py-1.5 text-sm font-medium text-violet-700 ring-1 ring-violet-200">
             {t('board.viewOnly')}
           </span>
         ) : (
           <SyncIndicator status={syncStatus} />
         )}
-        <button
-          onClick={() => setChatOpen(!chatOpen)}
-          aria-expanded={chatOpen}
-          className="btn-secondary relative inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-sm"
-        >
-          <ChatIcon className="h-4 w-4 text-blue-500" />
-          {t('chat.toggle')}
-          {!chatOpen && room.chat.unread > 0 && (
-            <span
-              aria-label={t('chat.unread', { count: room.chat.unread })}
-              className="absolute -top-2 -right-2 min-w-5 rounded-full bg-red-500 px-1.5 text-center text-xs font-semibold leading-5 text-white"
-            >
-              {room.chat.unread > 99 ? '99+' : room.chat.unread}
-            </span>
-          )}
-        </button>
-        <button
-          onClick={exportPng}
-          disabled={shapes.length === 0 || exporting}
-          title={shapes.length === 0 ? t('board.export.empty') : undefined}
-          className="btn-secondary inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-sm"
-        >
-          <DownloadIcon className="h-4 w-4 text-emerald-500" />
-          {t('board.export.button')}
-        </button>
-        <button
-          onClick={() => setSharing(true)}
-          className="btn-primary inline-flex items-center gap-1.5 rounded-xl px-3.5 py-1.5 text-sm"
-        >
-          <ShareIcon />
-          {t('share.open')}
-        </button>
-        <LanguageSwitcher />
+        <div className="flex items-center gap-2 max-sm:w-full max-sm:justify-end sm:gap-3">
+          <button
+            onClick={() => setChatOpen(!chatOpen)}
+            aria-expanded={chatOpen}
+            className={`btn-secondary relative ${HEADER_BUTTON}`}
+          >
+            <ChatIcon className="h-5 w-5 text-blue-500" />
+            <span className="sr-only sm:not-sr-only">{t('chat.toggle')}</span>
+            {!chatOpen && room.chat.unread > 0 && (
+              <span
+                aria-label={t('chat.unread', { count: room.chat.unread })}
+                className="absolute -top-2 -right-2 min-w-5 rounded-full bg-red-500 px-1.5 text-center text-xs font-semibold leading-5 text-white"
+              >
+                {room.chat.unread > 99 ? '99+' : room.chat.unread}
+              </span>
+            )}
+          </button>
+          <button
+            onClick={exportPng}
+            disabled={shapes.length === 0 || exporting}
+            title={shapes.length === 0 ? t('board.export.empty') : undefined}
+            className={`btn-secondary ${HEADER_BUTTON}`}
+          >
+            <DownloadIcon className="h-5 w-5 text-emerald-500" />
+            <span className="sr-only sm:not-sr-only">{t('board.export.button')}</span>
+          </button>
+          <button onClick={() => setSharing(true)} className={`btn-primary ${HEADER_BUTTON}`}>
+            <ShareIcon className="h-5 w-5" />
+            <span className="sr-only sm:not-sr-only">{t('share.open')}</span>
+          </button>
+          <LanguageSwitcher />
+        </div>
       </header>
       {room.error && (
         <div role="alert" className="mx-3 mt-3 flex items-center gap-3 rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">
@@ -331,7 +334,7 @@ function BoardEditor({ board, shapes: initialShapes, version }: Loaded) {
           onLeft={() => navigate('/', { replace: true })}
         />
       )}
-      <div className="flex min-h-0 flex-1 gap-3 p-3">
+      <div className="relative flex min-h-0 flex-1 gap-3 p-3">
         {!readOnly && (
           <Toolbar
             tool={tool}
@@ -394,9 +397,10 @@ function SyncIndicator({ status }: { status: SyncStatus }) {
   const { t } = useTranslation()
   const look = STATUS_CLASS[status]
   return (
-    <div role="status" className={`flex items-center gap-1.5 text-xs font-medium ${look.text}`}>
-      <span aria-hidden="true" className={`h-2 w-2 rounded-full ${look.dot}`} />
-      {t(`board.status.${status}`)}
+    <div role="status" className={`flex items-center gap-2 text-sm font-medium ${look.text}`}>
+      <span aria-hidden="true" className={`h-2.5 w-2.5 rounded-full ${look.dot}`} />
+      {/* On phones only the dot shows; the text is still announced. */}
+      <span className="sr-only lg:not-sr-only">{t(`board.status.${status}`)}</span>
     </div>
   )
 }

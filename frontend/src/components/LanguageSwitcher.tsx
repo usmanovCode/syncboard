@@ -18,7 +18,7 @@ export function LanguageSwitcher() {
           lang={language}
           aria-pressed={active === language}
           onClick={() => void setLanguage(language)}
-          className={`rounded-full px-2.5 py-1 text-xs font-medium transition ${
+          className={`rounded-full px-3 py-1.5 text-sm font-medium whitespace-nowrap transition sm:px-3.5 sm:py-2 ${
             active === language ? 'bg-brand text-white shadow-sm' : 'text-slate-500 hover:bg-slate-100 hover:text-slate-700'
           }`}
         >
