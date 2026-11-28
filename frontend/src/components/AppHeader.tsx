@@ -10,27 +10,28 @@ export function AppHeader() {
   const { t } = useTranslation()
   return (
     <header className="sticky top-0 z-20 border-b border-white/70 bg-white/70 backdrop-blur-md">
-      <div className="mx-auto flex max-w-[1840px] items-center justify-between gap-4 px-4 py-3 sm:px-6 lg:px-10">
-        <Logo />
-        <div className="flex items-center gap-3">
+      <div className="mx-auto flex min-h-[72px] max-w-[1840px] items-center justify-between gap-3 px-4 py-2.5 sm:gap-4 sm:px-6 lg:px-10">
+        <Logo size="lg" />
+        <div className="flex items-center gap-2 sm:gap-4">
           {user && (
-            <span className="hidden items-center gap-2 sm:inline-flex">
+            <span className="hidden items-center gap-2.5 md:inline-flex">
               <span
                 aria-hidden="true"
-                className="bg-brand flex h-8 w-8 items-center justify-center rounded-full text-xs font-semibold text-white"
+                className="bg-brand flex h-10 w-10 items-center justify-center rounded-full text-sm font-semibold text-white shadow-sm"
               >
                 {initials(user.fullName)}
               </span>
-              <span className="text-sm font-medium text-slate-700">{user.fullName}</span>
+              <span className="text-base font-semibold text-slate-700">{user.fullName}</span>
             </span>
           )}
           <LanguageSwitcher />
           <button
             onClick={logout}
-            className="btn-secondary inline-flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-sm"
+            className="btn-secondary inline-flex items-center gap-2 rounded-full p-2.5 text-base whitespace-nowrap sm:px-4.5 sm:py-2.5"
           >
-            <LogoutIcon className="h-4 w-4 text-slate-400" />
-            {t('common.logout')}
+            <LogoutIcon className="h-5 w-5 text-slate-400" />
+            {/* Phones show only the icon; the label stays for screen readers. */}
+            <span className="sr-only sm:not-sr-only">{t('common.logout')}</span>
           </button>
         </div>
       </div>

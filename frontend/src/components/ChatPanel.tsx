@@ -77,11 +77,14 @@ export function ChatPanel(props: ChatPanelProps) {
   const language = currentLanguage()
 
   return (
-    <aside aria-labelledby="chat-title" className="card flex w-80 shrink-0 flex-col overflow-hidden">
-      <div className="flex items-center justify-between border-b border-slate-100 bg-linear-to-r from-blue-50 to-violet-50 px-4 py-3">
-        <h2 id="chat-title" className="flex items-center gap-2 text-sm font-bold text-slate-900">
-          <span aria-hidden="true" className="flex h-7 w-7 items-center justify-center rounded-lg bg-white text-blue-600 shadow-sm">
-            <ChatIcon />
+    <aside
+      aria-labelledby="chat-title"
+      className="card flex flex-col overflow-hidden max-md:absolute max-md:inset-3 max-md:z-30 max-md:shadow-2xl md:w-[380px] md:shrink-0"
+    >
+      <div className="flex items-center justify-between border-b border-slate-100 bg-linear-to-r from-blue-50 to-violet-50 px-5 py-4">
+        <h2 id="chat-title" className="flex items-center gap-2.5 text-lg font-bold text-slate-900">
+          <span aria-hidden="true" className="flex h-9 w-9 items-center justify-center rounded-xl bg-white text-blue-600 shadow-sm">
+            <ChatIcon className="h-5 w-5" />
           </span>
           {t('chat.title')}
         </h2>
@@ -89,7 +92,7 @@ export function ChatPanel(props: ChatPanelProps) {
           onClick={onClose}
           aria-label={t('chat.close')}
           title={t('chat.close')}
-          className="rounded-lg px-2 py-1 text-slate-500 hover:bg-white hover:text-slate-700"
+          className="rounded-xl px-2.5 py-1.5 text-lg text-slate-500 hover:bg-white hover:text-slate-700"
         >
           ✕
         </button>
@@ -103,28 +106,28 @@ export function ChatPanel(props: ChatPanelProps) {
           const el = e.currentTarget
           stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < STICK_PX
         }}
-        className="min-h-0 flex-1 overflow-y-auto px-4 py-3"
+        className="min-h-0 flex-1 overflow-y-auto px-5 py-4"
       >
         {hasMore && (
           <div className="mb-3 text-center">
             <button
               onClick={loadOlder}
               disabled={older === 'loading'}
-              className="rounded-full bg-slate-50 px-3 py-1 text-xs font-medium text-blue-600 hover:bg-violet-50 hover:text-violet-700 disabled:text-slate-400"
+              className="rounded-full bg-slate-50 px-3.5 py-1.5 text-sm font-medium text-blue-600 hover:bg-violet-50 hover:text-violet-700 disabled:text-slate-400"
             >
               {older === 'loading' ? t('chat.loadingOlder') : t('chat.loadOlder')}
             </button>
             {older === 'failed' && (
-              <p role="alert" className="mt-1 text-xs text-red-600">
+              <p role="alert" className="mt-1 text-sm text-red-600">
                 {t('chat.loadOlderFailed')}
               </p>
             )}
           </div>
         )}
         {messages.length === 0 && pending.length === 0 && (
-          <p className="mt-6 text-center text-sm text-slate-400">{t('chat.empty')}</p>
+          <p className="mt-8 text-center text-base text-slate-400">{t('chat.empty')}</p>
         )}
-        <ul className="space-y-1">
+        <ul className="space-y-1.5">
           {messages.map((m, i) => {
             const previous = messages[i - 1]
             const startsGroup =
@@ -136,16 +139,16 @@ export function ChatPanel(props: ChatPanelProps) {
               <li key={m.id} className={`flex flex-col ${mine ? 'items-end' : 'items-start'} ${startsGroup && i > 0 ? 'pt-2' : ''}`}>
                 {startsGroup && (
                   <div className="mb-0.5 flex items-baseline gap-2 px-1">
-                    <span className="text-xs font-semibold" style={{ color: m.color }}>
+                    <span className="text-sm font-semibold" style={{ color: m.color }}>
                       {mine ? t('chat.you') : m.userName}
                     </span>
-                    <time dateTime={m.createdAt} className="text-[11px] text-slate-400">
+                    <time dateTime={m.createdAt} className="text-xs text-slate-400">
                       {formatMessageTime(m.createdAt, language)}
                     </time>
                   </div>
                 )}
                 <p
-                  className={`max-w-[85%] whitespace-pre-wrap break-words rounded-2xl px-3 py-1.5 text-sm ${
+                  className={`max-w-[85%] whitespace-pre-wrap break-words rounded-2xl px-3.5 py-2 text-base ${
                     mine ? 'bg-brand rounded-br-md text-white' : 'rounded-bl-md bg-slate-100 text-slate-800'
                   }`}
                 >
@@ -156,11 +159,11 @@ export function ChatPanel(props: ChatPanelProps) {
           })}
           {pending.map((p) => (
             <li key={p.clientMessageId} className="flex flex-col items-end pt-1">
-              <p className="bg-brand max-w-[85%] whitespace-pre-wrap break-words rounded-2xl rounded-br-md px-3 py-1.5 text-sm text-white opacity-60">
+              <p className="bg-brand max-w-[85%] whitespace-pre-wrap break-words rounded-2xl rounded-br-md px-3.5 py-2 text-base text-white opacity-60">
                 {p.text}
               </p>
               {p.error ? (
-                <div className="mt-0.5 flex flex-wrap items-center justify-end gap-2 px-1 text-xs text-red-600">
+                <div className="mt-0.5 flex flex-wrap items-center justify-end gap-2 px-1 text-sm text-red-600">
                   <span>{t('chat.failed', { reason: p.error })}</span>
                   <button onClick={() => onRetry(p.clientMessageId)} className="font-medium underline">
                     {t('chat.retry')}
@@ -170,14 +173,14 @@ export function ChatPanel(props: ChatPanelProps) {
                   </button>
                 </div>
               ) : (
-                <span className="px-1 text-[11px] text-slate-400">{t('chat.sending')}</span>
+                <span className="px-1 text-xs text-slate-400">{t('chat.sending')}</span>
               )}
             </li>
           ))}
         </ul>
       </div>
 
-      <p aria-live="polite" className="h-5 truncate px-4 text-xs italic text-slate-500">
+      <p aria-live="polite" className="h-6 truncate px-5 text-sm italic text-slate-500">
         {typingText(typingUsers, t)}
       </p>
 
@@ -186,7 +189,7 @@ export function ChatPanel(props: ChatPanelProps) {
           e.preventDefault()
           submit()
         }}
-        className="border-t border-slate-100 p-3"
+        className="border-t border-slate-100 p-4"
       >
         <textarea
           aria-label={t('chat.inputLabel')}
@@ -201,16 +204,16 @@ export function ChatPanel(props: ChatPanelProps) {
           }}
           onBlur={() => onTyping(false)}
           onKeyDown={onKeyDown}
-          className="field block w-full resize-none px-3 py-2 text-sm"
+          className="field block w-full resize-none px-4 py-3 text-base"
         />
-        <div className="mt-2 flex items-center justify-between">
-          <span className="text-xs text-slate-400">
+        <div className="mt-3 flex items-center justify-between">
+          <span className="text-sm text-slate-400">
             {draft.length >= COUNTER_FROM && t('chat.tooLong', { count: draft.length, max: CHAT_MAX_LENGTH })}
           </span>
           <button
             type="submit"
             disabled={!draft.trim()}
-            className="btn-primary rounded-xl px-4 py-1.5 text-sm"
+            className="btn-primary rounded-xl px-5 py-2.5 text-base"
           >
             {t('chat.send')}
           </button>
